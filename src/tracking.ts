@@ -132,8 +132,11 @@ export class VisionTuner {
     if (!this.started) return;
     if (!this.cvReady) return;
 
-    // Draw the live video frame onto raw canvas
-    this.rawCtx.drawImage(this.video, 0, 0, this.W, this.H);
+    // Draw the live video frame onto raw canvas, mirrored for a selfie view
+    this.rawCtx.save();
+    this.rawCtx.scale(-1, 1);
+    this.rawCtx.drawImage(this.video, -this.W, 0, this.W, this.H);
+    this.rawCtx.restore();
 
     // Get ImageData and make OpenCV Mat
     const imgData = this.rawCtx.getImageData(0, 0, this.W, this.H);
