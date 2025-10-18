@@ -51,6 +51,7 @@ export class VisionTuner {
 
   private cvReady = false;
   private started = false;
+  private cvReadyPromise: Promise<void>;
 
   constructor(width = 640, height = 480) {
     this.W = width;
@@ -80,17 +81,17 @@ export class VisionTuner {
     this.maskCtx = mctx;
 
     // Wait for OpenCV runtime
-    const waitCv = () =>
-      new Promise<void>((resolve) => {
-        const tick = () => {
-          if ((window as any).cv && cv.Mat) resolve();
-          else requestAnimationFrame(tick);
-        };
-        tick();
-      });
-
-    waitCv().then(() => {
-      this.cvReady = true;
+    this.cvReadyPromise = new Promise<void>((resolve) => {
+      const tick = () => {
+        const runtime = (window as any).cv;
+        if (runtime && typeof runtime.Mat === "function") {
+          this.cvReady = true;
+          resolve();
+          return;
+        }
+        requestAnimationFrame(tick);
+      };
+      tick();
     });
   }
 
@@ -98,11 +99,12 @@ export class VisionTuner {
     this.params = { ...this.params, ...p };
   }
 
+  public whenReady() {
+    return this.cvReadyPromise;
+  }
+
   public async startCamera() {
-    if (!this.cvReady) {
-      console.warn("OpenCV not ready yet.");
-      return;
-    }
+    await this.cvReadyPromise;
     if (this.started) return;
 
     // Request camera on user gesture.
@@ -128,6 +130,7 @@ export class VisionTuner {
 
   public update() {
     if (!this.started) return;
+    if (!this.cvReady) return;
 
     // Draw the live video frame onto raw canvas
     this.rawCtx.drawImage(this.video, 0, 0, this.W, this.H);
@@ -156,19 +159,25 @@ export class VisionTuner {
     cv.inRange(this.hsv, low, high, this.mask);
     low.delete(); high.delete();
 
+    let contourSource = this.mask;
+
     // Optional: keep just edges to isolate LED contours
     if (this.params.useEdges) {
       cv.Canny(this.mask, this.edges, 100, 200);
-      this.mask = this.edges; // display edges instead of full mask
+      contourSource = this.edges;
     } else {
       // little cleanup for blob
-      cv.erode(this.mask, this.mask, new cv.Mat(), new cv.Point(-1, -1), 1);
-      cv.dilate(this.mask, this.mask, new cv.Mat(), new cv.Point(-1, -1), 2);
+      const kernel = cv.Mat.ones(5, 5, cv.CV_8U);
+      cv.erode(this.mask, this.mask, kernel, new cv.Point(-1, -1), 1);
+      cv.dilate(this.mask, this.mask, kernel, new cv.Point(-1, -1), 2);
       cv.GaussianBlur(this.mask, this.mask, new cv.Size(7, 7), 0, 0);
+      kernel.delete();
     }
 
     // Find contours to pick the ball
-    cv.findContours(this.mask, this.contours, this.hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+    const contourInput = contourSource.clone();
+    cv.findContours(contourInput, this.contours, this.hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+    contourInput.delete();
     let bestArea = 0;
     let cx: number | null = null;
     let cy: number | null = null;
@@ -191,7 +200,7 @@ export class VisionTuner {
 
     // Draw mask/edges into maskCanvas for display in Phaser
     const show = new cv.Mat();
-    cv.cvtColor(this.mask, show, cv.COLOR_GRAY2RGBA);
+    cv.cvtColor(contourSource, show, cv.COLOR_GRAY2RGBA);
     const outImgData = new ImageData(new Uint8ClampedArray(show.data), this.W, this.H);
     this.maskCtx.putImageData(outImgData, 0, 0);
     show.delete();

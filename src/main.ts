@@ -8,6 +8,7 @@ class TunerScene extends Phaser.Scene {
   private maskImage!: Phaser.GameObjects.Image;
   private gfx!: Phaser.GameObjects.Graphics;
   private posText!: Phaser.GameObjects.Text;
+  private domPosEl?: HTMLElement;
 
   constructor() { super("TunerScene"); }
 
@@ -33,9 +34,21 @@ class TunerScene extends Phaser.Scene {
     // Overlay graphics (crosshair)
     this.gfx = this.add.graphics();
     this.posText = this.add.text(10, 10, "x: –, y: –", { color: "#ffffff", fontSize: "18px" });
+    this.domPosEl = document.getElementById("posDisplay") ?? undefined;
 
     // Bind Start button (user gesture required for some browsers to play video)
-    const startBtn = document.getElementById("startBtn");
+    const startBtn = document.getElementById("startBtn") as HTMLButtonElement | null;
+    if (startBtn) {
+      startBtn.disabled = true;
+      startBtn.textContent = "Loading OpenCV…";
+    }
+
+    this.vis.whenReady().then(() => {
+      if (!startBtn) return;
+      startBtn.disabled = false;
+      startBtn.textContent = "Start Camera";
+    });
+
     startBtn?.addEventListener("click", async () => {
       await this.vis.startCamera();
       startBtn.setAttribute("disabled", "true");
@@ -83,9 +96,12 @@ class TunerScene extends Phaser.Scene {
       this.gfx.strokeCircle(x, y, 12);
       this.gfx.lineBetween(x - 18, y, x + 18, y);
       this.gfx.lineBetween(x, y - 18, x, y + 18);
-      this.posText.setText(`x: ${Math.round(x)}, y: ${Math.round(y)}`);
+      const text = `x: ${Math.round(x)}, y: ${Math.round(y)}`;
+      this.posText.setText(text);
+      if (this.domPosEl) this.domPosEl.textContent = text;
     } else {
       this.posText.setText("x: –, y: –");
+      if (this.domPosEl) this.domPosEl.textContent = "x: –, y: –";
     }
   }
 }
