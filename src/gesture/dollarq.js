@@ -408,6 +408,3 @@ function EuclideanDistance(pt1, pt2)
 	var s = SqrEuclideanDistance(pt1, pt2);
 	return Math.sqrt(s);
 }
-
-// Export the recognizer as the default export so it can be imported as an ES module
-export default QDollarRecognizer;

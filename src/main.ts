@@ -1,6 +1,35 @@
+import { detectAllPlayers, playerMap } from "./gesture/tracker";
+// Draw player 1 points on debug canvas every frame
+const debugCanvas = document.getElementById('debugPlayerMap') as HTMLCanvasElement | null;
+const debugCtx = debugCanvas?.getContext('2d') ?? undefined;
+
+function drawPlayer1Points() {
+  if (!debugCtx) return;
+  debugCtx.clearRect(0, 0, 640, 480);
+  const points = playerMap.get(1);
+  if (points) {
+    debugCtx.fillStyle = '#ffeb3b';
+    for (const [x, y] of points) {
+      debugCtx.beginPath();
+      debugCtx.arc(x, y, 2, 0, Math.PI * 2);
+      debugCtx.fill();
+    }
+  }
+}
+
+// Print detectAllPlayers results every 1 second
+setInterval(() => {
+  const results = detectAllPlayers();
+
+  drawPlayer1Points();
+  if (results.results[1] !== null && results.results[1] !== undefined){
+    console.log('detectAllPlayers', results.results[1], results.elapsedMs);
+  }
+}, 100);
 // src/main.ts
 import Phaser from "phaser";
 import { VisionTuner, TunerParams } from "./tracking";
+import { addPoint } from "./gesture/tracker";
 
 class TunerScene extends Phaser.Scene {
   private vis!: VisionTuner;
@@ -9,6 +38,8 @@ class TunerScene extends Phaser.Scene {
   private gfx!: Phaser.GameObjects.Graphics;
   private posText!: Phaser.GameObjects.Text;
   private domPosEl?: HTMLElement;
+  private lastFpsCheck: number = performance.now();
+  private frameCount: number = 0;
 
   constructor() { super("TunerScene"); }
 
@@ -75,16 +106,25 @@ class TunerScene extends Phaser.Scene {
   }
 
   update() {
-    // Pump vision
-    this.vis.update();
+    // Pump vision and track FPS only when a frame was processed
+    const processed = this.vis.update();
+    if (processed) {
+      this.frameCount++;
+      const now = performance.now();
+      if (now - this.lastFpsCheck > 1000) {
+        const fps = Math.round((this.frameCount * 1000) / (now - this.lastFpsCheck));
+        console.log('OpenCV FPS:', fps);
+        this.lastFpsCheck = now;
+        this.frameCount = 0;
+      }
+    }
 
     // Refresh Phaser textures from canvases
-    const rawTex = this.textures.get("raw") as Phaser.Textures.CanvasTexture;
-    const maskTex = this.textures.get("mask") as Phaser.Textures.CanvasTexture;
+  const rawTex = this.textures.get("raw") as Phaser.Textures.CanvasTexture;
     rawTex.context.drawImage(this.vis.rawCanvas, 0, 0);
-    maskTex.context.drawImage(this.vis.maskCanvas, 0, 0);
+    //maskTex.context.drawImage(this.vis.maskCanvas, 0, 0);
     rawTex.refresh();
-    maskTex.refresh();
+    //maskTex.refresh();
 
     // Draw overlay crosshair on left view
     this.gfx.clear();
@@ -96,17 +136,21 @@ class TunerScene extends Phaser.Scene {
       this.gfx.strokeCircle(x, y, 12);
       this.gfx.lineBetween(x - 18, y, x + 18, y);
       this.gfx.lineBetween(x, y - 18, x, y + 18);
-      const text = `x: ${Math.round(x)}, y: ${Math.round(y)}`;
-      this.posText.setText(text);
-      if (this.domPosEl) this.domPosEl.textContent = text;
+  const text = `x: ${Math.round(x)}, y: ${Math.round(y)}`;
+  this.posText.setText(text);
+  if (this.domPosEl) this.domPosEl.textContent = text;
+
+    // Add point to tracker for player 1
+    addPoint(x, y, 1);
     } else {
+    addPoint(0, 0, 1);
       this.posText.setText("x: –, y: –");
       if (this.domPosEl) this.domPosEl.textContent = "x: –, y: –";
     }
   }
 }
 
-const game = new Phaser.Game({
+new Phaser.Game({
   type: Phaser.AUTO,
   parent: "game",
   backgroundColor: "#000000",

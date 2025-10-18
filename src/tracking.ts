@@ -52,6 +52,11 @@ export class VisionTuner {
   private cvReady = false;
   private started = false;
   private cvReadyPromise: Promise<void>;
+  private readonly targetFrameMs = 1000 / 30;
+  private lastProcessTime = 0;
+  private fpsWindowStart = performance.now();
+  private processedFrames = 0;
+  private lowFpsAlertShown = false;
 
   constructor(width = 640, height = 480) {
     this.W = width;
@@ -128,9 +133,15 @@ export class VisionTuner {
     this.started = true;
   }
 
-  public update() {
-    if (!this.started) return;
-    if (!this.cvReady) return;
+  public update(): boolean {
+    if (!this.started) return false;
+    if (!this.cvReady) return false;
+
+    const now = performance.now();
+    if (this.lastProcessTime && now - this.lastProcessTime < this.targetFrameMs) {
+      return false;
+    }
+    this.lastProcessTime = now;
 
     // Draw the live video frame onto raw canvas, mirrored for a selfie view
     this.rawCtx.save();
@@ -207,5 +218,19 @@ export class VisionTuner {
     const outImgData = new ImageData(new Uint8ClampedArray(show.data), this.W, this.H);
     this.maskCtx.putImageData(outImgData, 0, 0);
     show.delete();
+
+    this.processedFrames++;
+    const windowElapsed = now - this.fpsWindowStart;
+    if (windowElapsed >= 1000) {
+      const fps = (this.processedFrames * 1000) / windowElapsed;
+      if (fps < 30 && !this.lowFpsAlertShown) {
+        alert("OpenCV processing below 30 FPS");
+        this.lowFpsAlertShown = true;
+      }
+      this.processedFrames = 0;
+      this.fpsWindowStart = now;
+    }
+
+    return true;
   }
 }

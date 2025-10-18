@@ -1,29 +1,42 @@
 import { detect } from './gesture';
 
+export type TimedPoint = [number, number, number];
 
-const playerMap: Map<number, [[number,number]]> = new Map();
+export const playerMap: Map<number, TimedPoint[]> = new Map();
 
-export function detectAllPlayers() {
+export function detectAllPlayers(): { results: Record<number, ReturnType<typeof detect>[]>; elapsedMs: number } {
     const start = performance.now();
-    const results: Record<number, any> = {};
+    const results: Record<number, ReturnType<typeof detect>[]> = {};
     for (const [playerId, points] of playerMap.entries()) {
-        results[playerId] = detect(points);
+        const detections: ReturnType<typeof detect>[] = [];
+        for (let offset = 0; offset < points.length; offset += 5) {
+            const slice = points.slice(offset);
+            if (slice.length === 0) continue;
+            const res = detect(slice);
+            if (res) {
+                detections.push(res);
+            }
+        }
+        if (detections.length > 0) {
+            results[playerId] = detections;
+        }
     }
     const end = performance.now();
     return { results, elapsedMs: end - start };
 }
 
-const MAX_POINTS = 500;
+const MAX_POINTS = 80;
 
 export function addPoint(x: number, y: number, playerId: number) {
+    const timestamp = 0;
     const arr = playerMap.get(playerId);
     if (arr) {
-        arr.push([x, y]);
+        arr.push([x, y, timestamp]);
         if (arr.length > MAX_POINTS) {
             arr.splice(0, arr.length - MAX_POINTS);
         }
     } else {
-        playerMap.set(playerId, [[x, y]]);
+        playerMap.set(playerId, [[x, y, timestamp]]);
     }
 }
 

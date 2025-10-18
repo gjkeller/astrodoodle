@@ -1,45 +1,62 @@
+import DollarRecognizer, { Point, DollarRecognizerOptions, DollarResult } from './dollar';
+import type { TimedPoint } from './tracker';
 
-import GestureRecognizer from '@2players/dollar1-unistroke-recognizer';
+type GestureDefinition = {
+    name: string;
+    points: [number, number][];
+};
 
-export function detect(points: [number, number][]) {
-    // The default export from `dollarq.js` is a constructor function.
-    // Cast to any to avoid TypeScript constructor typing issues for this JS module.
-    const rec: GestureRecognizer = new GestureRecognizer(); // TODO pass in { defaultStrokes: false }
-    rec.add("N", [
-        [0, 0],
-        [0, 1],
-        [.25, .75],
-        [0.5, 0.5],
-        [.75, .25],
-        [1, 0],
-        [1, 1],
-    ].map(([x, y]) => ({ x: x, y: y })));
+let recognizerInstance: DollarRecognizer | null = null;
 
-    //      const points2 = Array.from({ length: 400 }, () => [
-    //   Math.floor(Math.random() * 4097),
-    //   Math.floor(Math.random() * 4097)
-    // ]);
+const defaultGestures: GestureDefinition[] = [
+    {
+        name: "N",
+        points: [
+            [0, 0],
+            [0, 1],
+            [.25, .75],
+            [0.5, 0.5],
+            [.75, .25],
+            [1, 0],
+            [1, 1],
+        ],
+    },
+];
+
+export function initializeRecognizer(
+    gestures: GestureDefinition[] = defaultGestures,
+    options: DollarRecognizerOptions = { defaultStrokes: true }
+) {
+    recognizerInstance = new DollarRecognizer(options);
+    for (const gesture of gestures) {
+        recognizerInstance.AddGesture(
+            gesture.name,
+            gesture.points.map(([x, y]) => new Point(x, y))
+        );
+    }
+    return recognizerInstance;
+}
+
+function getRecognizer() {
+    if (!recognizerInstance) {
+        initializeRecognizer();
+    }
+    return recognizerInstance!;
+}
 
 
-    // Convert [x,y] tuples into the recognizer's expected point objects { X, Y, ID }.
-    // Use ID = 1 for a single stroke.
-    const qPoints = points.map(([x, y]) => ({ x: x, y: y }));
+export function detect(points: TimedPoint[]): DollarResult | null {
+    const recognizer = getRecognizer();
 
-    const start = performance.now();
-    const result = rec.recognize(qPoints, true);
-    const end = performance.now();
-    return { type: result, elapsedMs: end - start };
+    // Convert [x,y] tuples into Point instances expected by DollarRecognizer.
+    const qPoints = points.map(([x, y, _]) => new Point(x, y));
+
+    const useProtractor = true;
+    const result = recognizer.Recognize(qPoints, useProtractor);
+    if (!result || result.Score <= 0) {
+        return null;
+    }
+
+    return result.Score > 7 ? result : null;
 }
 // ...existing code...
-
-if (true) {
-    console.log('first', detect([
-        [0, 0],
-        [0, 1],
-        [.25, .75],
-        [0.5, 0.5],
-        [.75, .25],
-        [1, 0],
-        [1, 1],
-    ]))
-}
