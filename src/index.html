@@ -1,20 +1,41 @@
 <!DOCTYPE html>
-<html>
-
+<html lang="en">
 <head>
-    <meta charset="utf-8">
-    <title>My Game</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-        body {
-            padding: 0px;
-            margin: 0px;
-            background: #242424;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <title>LED Ping-Pong Ball Tuner</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Phaser (if you don’t use bundler for phaser, else remove this) -->
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.js"></script>
+  <!-- OpenCV.js -->
+  <script async src="https://docs.opencv.org/4.x/opencv.js"></script>
+  <style>
+    body { margin: 0; background:#0e0e0e; color:#eee; font-family: system-ui, sans-serif; }
+    #controls { position: fixed; top: 8px; left: 8px; z-index: 10; background: #111; padding: 10px 12px; border-radius: 10px; border: 1px solid #333; }
+    #controls h3 { margin: 0 0 8px 0; font-size: 14px; }
+    .row { display:flex; gap:8px; align-items:center; margin:6px 0; }
+    .row label { width: 56px; font-size:12px; color:#bbb; }
+    .row input[type=range]{ width: 180px; }
+    #startBtn { width:100%; margin-top: 6px; padding: 6px 10px; background:#2b6fff; color:#fff; border:0; border-radius:8px; font-weight:600; cursor:pointer; }
+    #pos { font-weight:600; }
+  </style>
 </head>
-
 <body>
-</body>
+  <div id="controls">
+    <h3>Ball Tracker — Tuner</h3>
+    <div class="row"><label>H Min</label><input id="hMin" type="range" min="0" max="179" value="20"><span id="hMinV">20</span></div>
+    <div class="row"><label>H Max</label><input id="hMax" type="range" min="0" max="179" value="35"><span id="hMaxV">35</span></div>
+    <div class="row"><label>S Min</label><input id="sMin" type="range" min="0" max="255" value="120"><span id="sMinV">120</span></div>
+    <div class="row"><label>S Max</label><input id="sMax" type="range" min="0" max="255" value="255"><span id="sMaxV">255</span></div>
+    <div class="row"><label>V Min</label><input id="vMin" type="range" min="0" max="255" value="120"><span id="vMinV">120</span></div>
+    <div class="row"><label>V Max</label><input id="vMax" type="range" min="0" max="255" value="255"><span id="vMaxV">255</span></div>
+    <div class="row"><label>Bright</label><input id="bright" type="range" min="-100" max="100" value="0"><span id="brightV">0</span></div>
+    <div class="row"><span id="pos">x: –, y: –</span></div>
+    <button id="startBtn">Start Camera</button>
+  </div>
 
+  <div id="game"></div>
+
+  <!-- Your bundle should load main.ts compiled output. If using Vite/Webpack/Rollup, this is injected automatically. -->
+  <!-- If you need direct scripts, include them below after bundling. -->
+</body>
 </html>
