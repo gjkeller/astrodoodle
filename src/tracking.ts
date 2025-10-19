@@ -395,8 +395,9 @@ export class VisionTuner {
     this.historyHue = [];
     this.historySat = [];
     this.historyVal = [];
-    this.manualParams = { ...params };
-    this.manualDirty = false;
+    if (!this.manualDirty) {
+      this.manualParams = { ...params };
+    }
 
     if (result) {
       this.x = result.cx;
