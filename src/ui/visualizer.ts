@@ -144,11 +144,56 @@ export class Visualizer {
     this.pointsGraphics.clear();
     this.currentPosGraphics.clear();
     
-    // Draw points as small yellow dots
-    this.pointsGraphics.fillStyle(0xFFFF00, 1);
-    for (const point of this.points) {
+    // Draw points as a super smooth curve
+    if (this.points.length > 1) {
+      this.pointsGraphics.lineStyle(4, 0xFFFF00, 1); // Thicker yellow line for better visibility
+      
+      // Convert points to scaled coordinates
+      const scaledPoints = this.points.map(point => ({
+        x: point.x * this.scale - this.width / 2,
+        y: point.y * this.scale - this.height / 2
+      }));
+      
+      // Create multiple spline paths with high resolution for ultra-smooth curves
+      const vectors = scaledPoints.map(p => new Phaser.Math.Vector2(p.x, p.y));
+      
+      if (vectors.length >= 3) {
+        // Use spline with maximum smoothness
+        const path = new Phaser.Curves.Spline(vectors);
+        
+        // Draw the ultra-smooth curve with maximum resolution
+        this.pointsGraphics.beginPath();
+        path.draw(this.pointsGraphics, 256); // 256 divisions for ultra-smooth curve
+        this.pointsGraphics.strokePath();
+      } else {
+        // For just 2 points, create a simple smooth line with rounded caps
+        this.pointsGraphics.beginPath();
+        this.pointsGraphics.moveTo(scaledPoints[0].x, scaledPoints[0].y);
+        
+        // Add slight curve even for 2 points
+        const midX = (scaledPoints[0].x + scaledPoints[1].x) / 2;
+        const midY = (scaledPoints[0].y + scaledPoints[1].y) / 2;
+        
+        // Create a very subtle arc
+        const controlX = midX + (scaledPoints[1].y - scaledPoints[0].y) * 0.1;
+        const controlY = midY - (scaledPoints[1].x - scaledPoints[0].x) * 0.1;
+        
+        // Use a quadratic curve for slight smoothness
+        const path = new Phaser.Curves.QuadraticBezier(
+          new Phaser.Math.Vector2(scaledPoints[0].x, scaledPoints[0].y),
+          new Phaser.Math.Vector2(controlX, controlY),
+          new Phaser.Math.Vector2(scaledPoints[1].x, scaledPoints[1].y)
+        );
+        
+        path.draw(this.pointsGraphics, 64);
+        this.pointsGraphics.strokePath();
+      }
+    } else if (this.points.length === 1) {
+      // Draw a single point as a small circle if there's only one point
+      const point = this.points[0];
       const scaledX = point.x * this.scale - this.width / 2;
       const scaledY = point.y * this.scale - this.height / 2;
+      this.pointsGraphics.fillStyle(0xFFFF00, 1);
       this.pointsGraphics.fillCircle(scaledX, scaledY, 3);
     }
     
