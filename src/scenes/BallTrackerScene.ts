@@ -1,4 +1,5 @@
-import { VisionTuner, TrackedBall } from "../tracking";
+import { VisionTuner } from "../tracking";
+import type { TrackedBall } from "../tracking";
 import { addPoint } from "../gesture/tracker";
 
 export default class BallTrackerScene extends Phaser.Scene {
@@ -101,6 +102,10 @@ export default class BallTrackerScene extends Phaser.Scene {
       if (this.domPos) this.domPos.textContent = "–, –";
     });
 
+    this.renderBallList(this.vis.getTrackedBalls());
+
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.cleanup());
+
     // Create back button
     this.createBackButton();
   }
@@ -110,7 +115,7 @@ export default class BallTrackerScene extends Phaser.Scene {
 
     const container = document.createElement("div");
     container.id = "controls";
-    Object.assign(container.style, {
+    Object.assign(container.style, <Partial<CSSStyleDeclaration>>{
       position: "fixed",
       top: "18px",
       left: "18px",
@@ -124,7 +129,7 @@ export default class BallTrackerScene extends Phaser.Scene {
       zIndex: "1000",
       color: "#f0f3ff",
       fontFamily: "'Inter', 'Segoe UI', system-ui, sans-serif"
-    } as CSSStyleDeclaration);
+    });
 
     container.innerHTML = `
       <h1 style="margin:0 0 12px;font-size:17px;letter-spacing:0.08em;text-transform:uppercase;color:#7da9ff;">Ball Tracker</h1>
