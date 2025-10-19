@@ -23,6 +23,12 @@ export default class BootScene extends Phaser.Scene {
     this.load.spritesheet('explosion', ASSETS.explosion, { frameWidth: 96, frameHeight: 96 });
     this.load.image('missile', ASSETS.missile);
     
+    // Load glyph sprites
+    this.load.image('glyph-null', ASSETS.nullGlyph);
+    this.load.image('glyph-star', ASSETS.starGlyph);
+    this.load.image('glyph-triangle', ASSETS.triangleGlyph);
+    this.load.image('glyph-arrow', ASSETS.arrowGlyph);
+    
     // Load progress bar assets
     this.load.image('bar-gray-round-outline-small-l', ASSETS.barGrayRoundOutlineSmallL);
     this.load.image('bar-gray-round-outline-small-m', ASSETS.barGrayRoundOutlineSmallM);

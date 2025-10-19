@@ -60,6 +60,14 @@ export function deletePlayer(playerId: number): boolean {
     return playerMap.delete(playerId);
 }
 
+/**
+ * Reset the gesture tracker by clearing all player data
+ * This should be called when starting a new game to ensure clean state
+ */
+export function resetTracker(): void {
+    playerMap.clear();
+}
+
 /*
 	// --- Tracker demo ---
 	setInterval(() => {

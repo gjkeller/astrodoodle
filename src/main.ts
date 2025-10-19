@@ -4,9 +4,11 @@ import MenuScene from "./scenes/MenuScene";
 import SelectPlayersScene from "./scenes/SelectPlayersScene";
 import PlayingGameScene from "./scenes/PlayingGameScene";
 import LeaderboardScene from "./scenes/LeaderboardScene";
+import NameEntryScene from "./scenes/NameEntryScene";
 import SettingsScene from "./scenes/SettingsScene";
 import BallTrackerScene from "./scenes/BallTrackerScene";
 import VisualizerTestScene from "./scenes/VisualizerTestScene";
+import WandCalibrationScene from "./scenes/WandCalibrationScene";
 import { eventBus } from "./core/events";
 // Gesture tracking imports available for scenes that need them
 
@@ -44,7 +46,7 @@ window.addEventListener('load', function () {
 			mode: Phaser.Scale.ScaleModes.FIT,
 			autoCenter: Phaser.Scale.Center.CENTER_BOTH
 		},
-		scene: [BootScene, MenuScene, SelectPlayersScene, PlayingGameScene, LeaderboardScene, SettingsScene, BallTrackerScene, VisualizerTestScene]
+		scene: [BootScene, MenuScene, SelectPlayersScene, PlayingGameScene, LeaderboardScene, NameEntryScene, SettingsScene, BallTrackerScene, VisualizerTestScene, WandCalibrationScene]
 	});
 
 

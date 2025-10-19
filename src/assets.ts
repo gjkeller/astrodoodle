@@ -12,6 +12,12 @@ import meteor1 from './assets/meteor1.png';
 import explosion from './assets/explosion.png';
 import missile from './assets/missile.png';
 
+// Glyph sprites for wand mode
+import nullGlyph from './assets/null.png';
+import starGlyph from './assets/star.png';
+import triangleGlyph from './assets/triangle.png';
+import arrowGlyph from './assets/right-arrow.png';
+
 // Progress bar assets
 import barGrayRoundOutlineSmallL from './assets/bar_gray_round_outline_small_l.png';
 import barGrayRoundOutlineSmallM from './assets/bar_gray_round_outline_small_m.png';
@@ -33,6 +39,11 @@ export const ASSETS = {
   meteor1,
   explosion,
   missile,
+  // Glyph sprites
+  nullGlyph,
+  starGlyph,
+  triangleGlyph,
+  arrowGlyph,
   // Progress bar assets
   barGrayRoundOutlineSmallL,
   barGrayRoundOutlineSmallM,

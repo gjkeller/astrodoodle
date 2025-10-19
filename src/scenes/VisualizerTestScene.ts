@@ -24,31 +24,32 @@ export default class VisualizerTestScene extends Phaser.Scene {
   private readonly GESTURE_DISPLAY_DURATION = 1000; // ms
   private readonly PLAYER_ID = 1; // We'll use player 1
 
+  // Background mode - when true, runs silently without UI
+  private backgroundMode: boolean = false;
+
   constructor() {
     super('VisualizerTest');
   }
 
-  create(): void {
+  create(data?: { backgroundMode?: boolean }): void {
+    // Check if we're in background mode (launched as parallel scene)
+    this.backgroundMode = data?.backgroundMode || false;
+    
+    console.log(`VisualizerTestScene: Creating with backgroundMode=${this.backgroundMode}`);
+    
     this.vision = new VisionTuner();
-    // Create background
-    this.createBackground();
     
-    // Create title
-    this.createTitle();
+    if (!this.backgroundMode) {
+      // Create UI elements only when not in background mode
+      this.createBackground();
+      this.createTitle();
+      this.createContent();
+      this.createBackButton();
+      this.createStatusText();
+      this.setupInput();
+    }
     
-    // Create content area
-    this.createContent();
-    
-    // Create back button
-    this.createBackButton();
-    
-    // Create status text
-    this.createStatusText();
-    
-    // Setup input
-    this.setupInput();
-    
-    // Start camera automatically
+    // Start camera automatically (always needed for gesture detection)
     this.startCameraTracking();
   }
   
@@ -68,7 +69,7 @@ export default class VisualizerTestScene extends Phaser.Scene {
   }
   
   private updateStatusText(text: string): void {
-    if (this.statusText) {
+    if (this.statusText && !this.backgroundMode) {
       this.statusText.setText(text);
     }
   }
@@ -134,8 +135,52 @@ export default class VisualizerTestScene extends Phaser.Scene {
       this.updateVisualizer();
     }
   }
+
+  isWandPresent(): boolean {
+    if (!this.vision || !this.cameraStarted) {
+      return false;
+    }
+    return this.vision.primaryX !== null && this.vision.primaryY !== null;
+  }
+
+  public getCurrentSpell(): Spell {
+    if (!this.vision || !this.cameraStarted) {
+      return Spell.NONE;
+    }
+    return this.currentSpell;
+  }
+
+  public getCurrentPosition(): Point | null {
+    if (!this.vision || !this.cameraStarted) {
+      return null;
+    }
+    return this.currentPos;
+  }
+
+  public getPoints(): Point[] {
+    if (!this.vision || !this.cameraStarted) {
+      return [];
+    }
+    
+    // Get points from player 1's tracker data
+    const playerPoints = playerMap.get(this.PLAYER_ID);
+    const points: Point[] = [];
+    
+    if (playerPoints) {
+      // Convert TimedPoint[] to Point[] (extract x, y from [x, y, timestamp])
+      for (const [x, y] of playerPoints) {
+        points.push({ x, y });
+      }
+    }
+    
+    return points;
+  }
   
   private checkForGestures(): void {
+    if (!this.vision || !this.cameraStarted) {
+      return;
+    }
+    
     const bestGestures = getBestPlayerGestures();
     const gesture = bestGestures.get(this.PLAYER_ID);
     
@@ -310,7 +355,7 @@ export default class VisualizerTestScene extends Phaser.Scene {
   // No longer need generateTestPoints() as we get points from camera tracking
   
   private updateVisualizer(): void {
-    if (this.visualizer) {
+    if (this.visualizer && this.vision) {
       // Get points from player 1's tracker data
       const playerPoints = playerMap.get(this.PLAYER_ID);
       const visualizerPoints: Point[] = [];
@@ -427,31 +472,41 @@ export default class VisualizerTestScene extends Phaser.Scene {
       this.cameraStarted = false;
     }
     
-    // Go back to Settings scene
-    this.scene.start('Settings');
+    // Go back to Settings scene (only if not in background mode)
+    if (!this.backgroundMode) {
+      this.scene.start('Settings');
+    }
   }
 
   // Called when the scene is about to shut down or transition
   shutdown(): void {
-    // Make sure we clean up camera resources
-    if (this.cameraStarted && this.vision) {
-      try {
-        // Clear tracked data
-        this.vision.clearBalls();
-        
-        // Stop the MediaStream
-        const videoElement = document.querySelector('video');
-        if (videoElement && videoElement.srcObject) {
-          const mediaStream = videoElement.srcObject as MediaStream;
-          mediaStream.getTracks().forEach(track => track.stop());
-          videoElement.srcObject = null;
-        }
-      } catch (error) {
-        console.error("Error cleaning up camera resources during shutdown:", error);
-      }
-    }
+    console.log(`VisualizerTestScene: Shutting down with backgroundMode=${this.backgroundMode}`);
     
-    // Remove event listeners
-    this.input.keyboard?.off('keydown-ESC');
+    // Only clean up if we're not in background mode
+    // In background mode, we want to preserve the calibration
+    if (!this.backgroundMode) {
+      // Make sure we clean up camera resources
+      if (this.cameraStarted && this.vision) {
+        try {
+          // Clear tracked data
+          this.vision.clearBalls();
+          
+          // Stop the MediaStream
+          const videoElement = document.querySelector('video');
+          if (videoElement && videoElement.srcObject) {
+            const mediaStream = videoElement.srcObject as MediaStream;
+            mediaStream.getTracks().forEach(track => track.stop());
+            videoElement.srcObject = null;
+          }
+        } catch (error) {
+          console.error("Error cleaning up camera resources during shutdown:", error);
+        }
+      }
+      
+      // Remove event listeners
+      this.input.keyboard?.off('keydown-ESC');
+    } else {
+      console.log("VisualizerTestScene: Preserving calibration in background mode");
+    }
   }
 }

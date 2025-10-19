@@ -2,9 +2,12 @@ import { BitmapTextHelper } from '../ui/bitmapText';
 import { ProgressBar, Minimap } from '../ui';
 import { Asteroid } from '../gameplay';
 import { Missile } from '../gameplay/missile';
-import { gameStore, eventBus } from '../core';
+import { gameStore, eventBus, settingsStore, createModeInput, type ModeInput, visualizerManager } from '../core';
 import { GAME_SETTINGS, msToTicks } from '../core/settings';
+import { Visualizer, Spell } from '../ui/visualizer';
+import { leaderboardStore } from '../core/leaderboard-store';
 import type { PlayerId } from '../types/global';
+// import type VisualizerTestScene from './VisualizerTestScene'; // Used in type annotations
 
 export default class PlayingGameScene extends Phaser.Scene {
   private background1: Phaser.GameObjects.Image;
@@ -16,8 +19,10 @@ export default class PlayingGameScene extends Phaser.Scene {
   private asteroids: Asteroid[] = [];
   private missiles: Missile[] = [];
   private staticShip: Phaser.GameObjects.Image;
-  private minimap: Minimap;
+  private minimap: Minimap | null = null;
+  private visualizer: Visualizer | null = null;
   private fpsText: Phaser.GameObjects.Text | null = null;
+  private modeInput: ModeInput | null = null;
   
   // Game timing
   private gameDurationTicks: number = msToTicks(60000); // 60 seconds = 1800 ticks
@@ -36,14 +41,36 @@ export default class PlayingGameScene extends Phaser.Scene {
   private ticksSinceLastSpawn: number = 0;
   
   // Difficulty progression
-  private currentSpawnRateTicks: number = msToTicks(2000); // Start with 2 seconds = 60 ticks
-  private currentFallSpeed: number = 1.67; // pixels per tick (50 pixels/second / 30 ticks/second)
+  private currentSpawnRateTicks: number = 60; // Start with 60 ticks (2 seconds)
+  private currentFallSpeed: number = 1.0; // pixels per tick
+  
+  // Progressive symbol introduction for wand mode
+  private symbolsUnlocked: string[] = [];
   
   constructor() {
     super('PlayingGame');
   }
   
   create(): void {
+    const inputMode = settingsStore.getInputMode();
+    
+    // Initialize visualizer manager if in wand mode
+    if (inputMode === 'wand') {
+      console.log('PlayingGameScene: Starting in wand mode');
+      if (!visualizerManager.isInitialized()) {
+        visualizerManager.initialize(this);
+      } else if (visualizerManager.needsReinitialization()) {
+        visualizerManager.initialize(this);
+      } else {
+        visualizerManager.updateSceneReference(this);
+      }
+      this.modeInput = createModeInput('wand', this);
+      this.symbolsUnlocked = ['TRIANGLE', 'NULL']; // Start with triangle and null
+    } else {
+      console.log('PlayingGameScene: Starting in keyboard mode');
+      this.modeInput = createModeInput('keyboard', this);
+    }
+    
     // Create explosion animation
     this.createExplosionAnimation();
     
@@ -83,6 +110,19 @@ export default class PlayingGameScene extends Phaser.Scene {
     // Debug: Log update calls
     if (this.currentTick < 5) {
       console.log(`update called: isGameActive=${this.isGameActive}, currentTick=${this.currentTick}`);
+    }
+    
+    // Handle wand input if in wand mode
+    if (this.isGameActive && settingsStore.getInputMode() === 'wand') {
+      this.handleWandInput();
+    }
+    
+    // Update visualizer manager and data if in wand mode
+    if (settingsStore.getInputMode() === 'wand') {
+      visualizerManager.update();
+      if (this.visualizer) {
+        this.updateVisualizerData();
+      }
     }
     
     if (!this.isGameActive) return;
@@ -204,8 +244,23 @@ export default class PlayingGameScene extends Phaser.Scene {
   }
   
   private createMinimap(): void {
-    // Create minimap in bottom-left corner, above the progress bar
-    this.minimap = new Minimap(this, 100, GAME_SETTINGS.CANVAS_HEIGHT - 140);
+    const inputMode = settingsStore.getInputMode();
+    
+    if (inputMode === 'keyboard') {
+      // Create minimap in bottom-left corner, above the progress bar
+      this.minimap = new Minimap(this, 100, GAME_SETTINGS.CANVAS_HEIGHT - 140);
+    } else {
+      // Create Visualizer bottom-left
+      this.visualizer = new Visualizer(
+        this,
+        100, // x
+        GAME_SETTINGS.CANVAS_HEIGHT - 240, // y  
+        0.5, // scale
+        0xFFFFFF, // border
+        2, // border width
+        0x000000 // background
+      );
+    }
     
     // Create FPS counter if enabled
     if (GAME_SETTINGS.SHOW_FPS_COUNTER) {
@@ -304,9 +359,15 @@ export default class PlayingGameScene extends Phaser.Scene {
     
     console.log('spawnAsteroid called, isSpawningActive:', this.isSpawningActive);
     
-    // Generate random WASD sequence (1-4 characters)
-    const sequenceLength = Math.random() < 0.3 ? 4 : Math.random() < 0.5 ? 3 : Math.random() < 0.7 ? 2 : 1;
-    const sequence = this.generateWASDSequence(sequenceLength);
+    const inputMode = settingsStore.getInputMode();
+    const sequenceLength = this.getSequenceLengthForWandMode();
+    
+    let sequence: string;
+    if (inputMode === 'wand') {
+      sequence = this.generateSpellSequence(sequenceLength);
+    } else {
+      sequence = this.generateWASDSequence(sequenceLength);
+    }
     
     // Spawn first asteroid with collision detection
     const spawnX = this.findValidSpawnPosition();
@@ -317,8 +378,8 @@ export default class PlayingGameScene extends Phaser.Scene {
       console.log('Asteroid spawned, total asteroids:', this.asteroids.length);
     }
     
-    // Chance for multiple asteroids to spawn at once
-    if (Math.random() < 0.15) { // 15% chance
+    // Chance for multiple asteroids to spawn at once - ONLY in keyboard mode
+    if (inputMode === 'keyboard' && Math.random() < 0.15) { // 15% chance
       const secondSequence = this.generateWASDSequence(sequenceLength);
       const secondSpawnX = this.findValidSpawnPosition();
       if (secondSpawnX !== null) {
@@ -366,6 +427,17 @@ export default class PlayingGameScene extends Phaser.Scene {
     
     return sequence.join(' ');
   }
+
+  private generateSpellSequence(length: number): string {
+    // Use only unlocked symbols in wand mode
+    const availableSpells = this.symbolsUnlocked.length > 0 
+      ? this.symbolsUnlocked 
+      : ['NULL', 'STAR', 'TRIANGLE', 'ARROW'];
+    
+    return Array(length).fill(0).map(() => 
+      availableSpells[Math.floor(Math.random() * availableSpells.length)]
+    ).join(' ');
+  }
   
   private fixedUpdate(): void {
     const elapsedTicks = this.currentTick - this.gameStartTick;
@@ -387,6 +459,7 @@ export default class PlayingGameScene extends Phaser.Scene {
     // Update difficulty over time (only while spawning is active)
     if (this.isSpawningActive) {
       this.updateDifficulty(elapsedTicks);
+      this.updateSymbolProgression(elapsedTicks);
       this.ticksSinceLastSpawn++;
       
       if (this.ticksSinceLastSpawn >= this.currentSpawnRateTicks) {
@@ -464,14 +537,47 @@ export default class PlayingGameScene extends Phaser.Scene {
   private updateDifficulty(elapsedTicks: number): void {
     const difficultyProgress = elapsedTicks / this.gameDurationTicks;
     
-    // Increase spawn rate (faster spawning)
-    // OLD: 2000ms to 500ms -> NEW: 60 ticks to 15 ticks (30 TPS)
-    const newSpawnRate = Math.max(15, 60 - Math.floor(difficultyProgress * 45));
-    this.currentSpawnRateTicks = newSpawnRate;
+    // Spawn rate: 60 ticks to 45 ticks over the course of the round
+    const spawnRateReduction = difficultyProgress * 15; // 60 - 45 = 15
+    this.currentSpawnRateTicks = Math.max(45, Math.round(60 - spawnRateReduction));
     
-    // Increase fall speed
-    // OLD: 50 to 150 pixels/second -> NEW: 1.67 to 5 pixels/tick (30 TPS)
-    this.currentFallSpeed = 1.67 + (difficultyProgress * 3.33);
+    // Fall speed: 1.0 to 1.4 over the course of the round
+    const fallSpeedIncrease = difficultyProgress * 0.4; // 1.4 - 1.0 = 0.4
+    this.currentFallSpeed = 1.0 + fallSpeedIncrease;
+    
+  }
+
+  private updateSymbolProgression(elapsedTicks: number): void {
+    if (settingsStore.getInputMode() !== 'wand') return;
+    
+    // Start with TRIANGLE and NULL (0s)
+    // ARROW: 15s (450 ticks)
+    // STAR: 30s (900 ticks)
+    
+    if (elapsedTicks >= 900 && !this.symbolsUnlocked.includes('STAR')) {
+      this.symbolsUnlocked.push('STAR');
+    } else if (elapsedTicks >= 450 && !this.symbolsUnlocked.includes('ARROW')) {
+      this.symbolsUnlocked.push('ARROW');
+    }
+  }
+
+  private getSequenceLengthForWandMode(): number {
+    const inputMode = settingsStore.getInputMode();
+    
+    if (inputMode === 'wand') {
+      const elapsedTicks = this.currentTick - this.gameStartTick;
+      
+      // 1 spell: 0-600 ticks (0-20s)
+      // 2 spells: 600-1200 ticks (20-40s)
+      // 3 spells: 1200+ ticks (40s+) - removed 4 spells
+      
+      if (elapsedTicks < 600) return 1;
+      if (elapsedTicks < 1200) return Math.random() < 0.7 ? 1 : 2; // Gradual intro to 2
+      return Math.random() < 0.8 ? 2 : 3; // 80% chance for 2, 20% chance for 3 (rarer)
+    }
+    
+    // Keyboard mode: existing random logic (also remove 4 for consistency)
+    return Math.random() < 0.2 ? 3 : Math.random() < 0.6 ? 2 : 1; // 20% chance for 3, 40% for 2, 40% for 1
   }
   
   private updateAsteroids(): void {
@@ -590,8 +696,10 @@ export default class PlayingGameScene extends Phaser.Scene {
   private handleKeyPress(key: string): void {
     if (!this.isGameActive) return;
     
-    // Add to minimap
-    this.minimap.addKeyPress(key);
+    // Add to minimap only in keyboard mode
+    if (settingsStore.getInputMode() === 'keyboard' && this.minimap) {
+      this.minimap.addKeyPress(key);
+    }
     
     // Find the closest asteroid that can accept this key
     const nearestAsteroid = this.findNearestValidAsteroid(key);
@@ -741,6 +849,44 @@ export default class PlayingGameScene extends Phaser.Scene {
     // Incorrect key press doesn't change multiplier anymore
     // Multiplier only changes based on consecutive asteroids destroyed
   }
+
+  private handleWandInput(): void {
+    if (!this.modeInput) return;
+    
+    const spell = this.modeInput.getCurrentSpell();
+    if (spell !== Spell.NONE) {
+      // Consume the spell immediately (removes from game logic but keeps in visualizer)
+      const consumedSpell = visualizerManager.consumeSpell();
+      
+      // Map spell to sequence string
+      const keyMapping: Record<Spell, string> = {
+        [Spell.NULL]: 'NULL',
+        [Spell.STAR]: 'STAR',
+        [Spell.TRIANGLE]: 'TRIANGLE',
+        [Spell.ARROW]: 'ARROW',
+        [Spell.NONE]: ''
+      };
+      
+      const key = keyMapping[consumedSpell];
+      if (key) {
+        this.handleKeyPress(key); // Reuse existing logic
+      }
+    }
+  }
+
+  private updateVisualizerData(): void {
+    if (!this.visualizer || !this.modeInput) return;
+    
+    // Get data from the singleton visualizer manager
+    const points = visualizerManager.getPoints();
+    const currentPosition = visualizerManager.getCurrentPosition();
+    const visualizerSpell = visualizerManager.getVisualizerSpell(); // Use visualizer spell for display
+    
+    // Update the visualizer widget with the latest data
+    this.visualizer.setPoints(points);
+    this.visualizer.setCurrentPosition(currentPosition);
+    this.visualizer.showSpell(visualizerSpell);
+  }
   
   private getBaseScore(sequenceLength: number): number {
     switch (sequenceLength) {
@@ -814,17 +960,30 @@ export default class PlayingGameScene extends Phaser.Scene {
     );
     this.resultsOverlay.add(starsText);
     
+    // Check if score qualifies for leaderboard
+    const isHighScore = leaderboardStore.isHighScore(finalScore);
+    
     // Instructions
     const instructions = BitmapTextHelper.createHUDText(
       this,
       0,
       100,
-      'PRESS ENTER TO RETURN TO MENU',
+      isHighScore ? 'PRESS ENTER TO ENTER NAME' : 'PRESS ENTER TO RETURN TO MENU',
       GAME_SETTINGS.COLORS.WHITE
     );
     this.resultsOverlay.add(instructions);
     
     this.resultsOverlay.setDepth(1000);
+    
+    // Set up input handling for game over
+    this.input.keyboard?.once('keydown-ENTER', () => {
+      if (isHighScore) {
+        this.scene.start('NameEntry', { score: finalScore });
+      } else {
+        this.scene.start('Menu');
+      }
+    });
   }
+
 
 }

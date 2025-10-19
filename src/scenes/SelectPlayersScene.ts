@@ -1,23 +1,47 @@
 import { BitmapTextHelper } from '../ui/bitmapText';
 import { Button } from '../ui/button';
-import { gameStore, eventBus } from '../core';
+import { gameStore, eventBus, settingsStore, createModeInput, type ModeInput, visualizerManager } from '../core';
 import { GAME_SETTINGS } from '../core/settings';
 import type { PlayerId } from '../types/global';
+import { resetTracker } from '../gesture/tracker';
 
 export default class SelectPlayersScene extends Phaser.Scene {
   private title: Phaser.GameObjects.Text | Phaser.GameObjects.BitmapText;
   private playerPanels: [PlayerPanel, PlayerPanel];
   private startButton: Button;
   private backButton: Button;
+  private modeInput: ModeInput | null = null;
+  private hasSeenWandInWandMode: boolean = false;
   
   constructor() {
     super('SelectPlayers');
   }
   
   create(): void {
+    const inputMode = settingsStore.getInputMode();
+    
+    // Reset gesture tracker to ensure clean state for new game
+    // This fixes the issue where wand detection fails after game restart
+    // because the previous game's gesture data was still in the tracker
+    resetTracker();
+    
+    // Initialize visualizer manager if in wand mode
+    if (inputMode === 'wand') {
+      if (!visualizerManager.isInitialized()) {
+        visualizerManager.initialize(this);
+      } else if (visualizerManager.needsReinitialization()) {
+        visualizerManager.initialize(this);
+      } else {
+        visualizerManager.updateSceneReference(this);
+      }
+    }
+    
+    // Create modeInput adapter
+    this.modeInput = createModeInput(inputMode, this);
+    
     this.createBackground();
     this.createTitle();
-    this.createPlayerPanels();
+    this.createPlayerPanels(inputMode);
     this.createStartButton();
     this.createBackButton();
     this.setupInput();
@@ -49,14 +73,14 @@ export default class SelectPlayersScene extends Phaser.Scene {
     this.title.setDepth(100);
   }
   
-  private createPlayerPanels(): void {
+  private createPlayerPanels(inputMode: 'keyboard' | 'wand'): void {
     const centerX = GAME_SETTINGS.CANVAS_WIDTH / 2;
     const centerY = GAME_SETTINGS.CANVAS_HEIGHT / 2;
     
     // Singleplayer mode: only show one player panel in the center
     this.playerPanels = [
-      new PlayerPanel(this, centerX, centerY, 0),
-      new PlayerPanel(this, centerX, centerY, 1) // Hidden
+      new PlayerPanel(this, centerX, centerY, 0, inputMode),
+      new PlayerPanel(this, centerX, centerY, 1, inputMode) // Hidden
     ];
     
     // Hide the second player panel for singleplayer
@@ -99,16 +123,38 @@ export default class SelectPlayersScene extends Phaser.Scene {
     this.scene.start('Menu');
   }
   
+  update(_time: number, _delta: number): void {
+    // Handle wand mode detection
+    if (settingsStore.getInputMode() === 'wand' && this.modeInput) {
+      // Update visualizer manager
+      visualizerManager.update();
+      
+      const wandPresent = this.modeInput.isWandPresent?.() || false;
+      
+      // Once wand is seen, mark as ready permanently
+      if (wandPresent && !this.hasSeenWandInWandMode) {
+        this.hasSeenWandInWandMode = true;
+        eventBus.emit('player:ready', { playerId: 0, ready: 'ready' });
+      }
+    }
+  }
+
   private setupInput(): void {
-    // Singleplayer mode: W key toggles ready state for player 0
-    const keys = this.input.keyboard!;
-    keys.on('keydown-W', () => {
-      const currentState = gameStore.players[0].ready;
-      const newState = currentState === 'ready' ? 'not-ready' : 'ready';
-      eventBus.emit('player:ready', { playerId: 0, ready: newState });
-    });
+    const inputMode = settingsStore.getInputMode();
     
-    // Enter key starts the game (only if player is ready)
+    if (inputMode === 'keyboard') {
+      // W key toggles ready state for player 0 in keyboard mode
+      const keys = this.input.keyboard!;
+      keys.on('keydown-W', () => {
+        const currentState = gameStore.players[0].ready;
+        const newState = currentState === 'ready' ? 'not-ready' : 'ready';
+        eventBus.emit('player:ready', { playerId: 0, ready: newState });
+      });
+    }
+    // In wand mode, no W key needed - wand detection is automatic
+    
+    // Enter key starts the game (only if player is ready) - works in both modes
+    const keys = this.input.keyboard!;
     keys.on('keydown-ENTER', () => {
       if (gameStore.players[0].ready === 'ready') {
         this.startGame();
@@ -135,22 +181,27 @@ export default class SelectPlayersScene extends Phaser.Scene {
       this.scene.start('PlayingGame');
     }
   }
+
+
 }
 
 class PlayerPanel extends Phaser.GameObjects.Container {
   private glyph: Phaser.GameObjects.Image;
   private statusText: Phaser.GameObjects.Text | Phaser.GameObjects.BitmapText;
   private playerId: PlayerId;
+  private inputMode: 'keyboard' | 'wand';
   
   constructor(
     scene: Phaser.Scene,
     x: number,
     y: number,
-    playerId: PlayerId
+    playerId: PlayerId,
+    inputMode: 'keyboard' | 'wand'
   ) {
     super(scene, x, y);
     
     this.playerId = playerId;
+    this.inputMode = inputMode;
     
     // Create player ship
     const shipKey = playerId === 0 ? 'orange-ship' : 'purple-ship';
@@ -158,12 +209,13 @@ class PlayerPanel extends Phaser.GameObjects.Container {
     this.glyph.setScale(0.8);
     this.add(this.glyph);
     
-    // Create status text
+    // Create status text based on input mode
+    const statusText = inputMode === 'keyboard' ? 'PRESS W FOR READY' : 'DISPLAY WAND';
     this.statusText = BitmapTextHelper.createHUDText(
       scene,
       0,
       50,
-      'PRESS W FOR READY',
+      statusText,
       0xFF9696 
     );
     this.add(this.statusText);
@@ -186,11 +238,12 @@ class PlayerPanel extends Phaser.GameObjects.Container {
         0x96FFA2
       );
     } else {
+      const statusText = this.inputMode === 'keyboard' ? 'PRESS W FOR READY' : 'DISPLAY WAND';
       this.statusText = BitmapTextHelper.createHUDText(
         this.scene,
         0,
         50,
-        'PRESS W FOR READY',
+        statusText,
         0xFF9696 
       );
     }

@@ -83,10 +83,14 @@ export class Asteroid extends Phaser.GameObjects.Container {
   }
   
   private calculateScale(sequenceLength: number): number {
-    // Linear interpolation: 1 input = 0.5 scale, 4 inputs = 1.2 scale
-    // Formula: scale = 0.5 + (sequenceLength - 1) * (1.2 - 0.5) / (4 - 1)
-    // Simplified: scale = 0.5 + (sequenceLength - 1) * 0.7 / 3
-    return 0.5 + (sequenceLength - 1) * 0.7 / 3;
+    // Adjusted scaling to make 1 and 2-shape asteroids bigger
+    // 1 shape = 0.7 scale, 2 shapes = 0.9 scale, 3 shapes = 1.1 scale
+    switch (sequenceLength) {
+      case 1: return 0.7;  // Bigger than before (was 0.5)
+      case 2: return 0.9;  // Bigger than before (was 0.73)
+      case 3: return 1.1;  // Slightly bigger than before (was 0.97)
+      default: return 1.0; // Fallback
+    }
   }
 
   private createCharacterTexts(sequence: string, scale: number): void {
@@ -94,26 +98,61 @@ export class Asteroid extends Phaser.GameObjects.Container {
     const totalWidth = (keys.length - 1) * 30; // Space between characters
     const startX = -totalWidth / 2;
     
-    // Calculate font size based on scale (base 24px scaled by meteor scale)
-    const fontSize = Math.round(24 * scale);
-    
     for (let i = 0; i < keys.length; i++) {
-      const charText = this.scene.add.text(
-        startX + (i * 30),
-        -70,
-        keys[i],
-        {
-          fontSize: `${fontSize}px`, // Scale font size with meteor
-          fontFamily: '"Press Start 2P", monospace', // Ensure Press Start 2P
-          color: '#ffff00', // Start with yellow
-          align: 'center'
+      const key = keys[i];
+      
+      // Check if this is a spell (wand mode) or a regular key (keyboard mode)
+      if (this.isSpellKey(key)) {
+        // Create glyph sprite for spell
+        const glyphKey = this.getGlyphAssetKey(key);
+        if (glyphKey) {
+          const glyphSprite = this.scene.add.image(
+            startX + (i * 30),
+            -70,
+            glyphKey
+          );
+          glyphSprite.setScale(scale * 0.8); // Scale with asteroid
+          glyphSprite.setOrigin(0.5);
+          glyphSprite.setDepth(151);
+          glyphSprite.setAlpha(0.9); // Slightly transparent like visualizer
+          // Don't apply tint to preserve original glyph colors
+          this.characterTexts.push(glyphSprite as any); // Store as any to maintain compatibility
+          this.add(glyphSprite);
         }
-      );
-      charText.setOrigin(0.5);
-      charText.setDepth(151);
-      this.characterTexts.push(charText);
-      this.add(charText);
+      } else {
+        // Create text for keyboard keys
+        const fontSize = Math.round(24 * scale);
+        const charText = this.scene.add.text(
+          startX + (i * 30),
+          -70,
+          key,
+          {
+            fontSize: `${fontSize}px`,
+            fontFamily: '"Press Start 2P", monospace',
+            color: '#ffff00',
+            align: 'center'
+          }
+        );
+        charText.setOrigin(0.5);
+        charText.setDepth(151);
+        this.characterTexts.push(charText);
+        this.add(charText);
+      }
     }
+  }
+  
+  private isSpellKey(key: string): boolean {
+    return ['NULL', 'STAR', 'TRIANGLE', 'ARROW'].includes(key);
+  }
+  
+  private getGlyphAssetKey(spell: string): string | null {
+    const glyphMapping: Record<string, string> = {
+      'NULL': 'glyph-null',
+      'STAR': 'glyph-star',
+      'TRIANGLE': 'glyph-triangle',
+      'ARROW': 'glyph-arrow'
+    };
+    return glyphMapping[spell] || null;
   }
   
   // Update text positions to follow physics body
@@ -123,14 +162,28 @@ export class Asteroid extends Phaser.GameObjects.Container {
   }
   
   private updateDisplay(): void {
-    // Update each character text color
+    // Update each character text/sprite color
     for (let i = 0; i < this.characterTexts.length; i++) {
+      const element = this.characterTexts[i];
+      
       if (this.consumedKeys[i]) {
         // Gray out consumed keys
-        this.characterTexts[i].setTint(0x666666);
+        if (element.setTint) {
+          // Text elements have setTint
+          element.setTint(0x666666);
+        } else {
+          // Glyph sprites - use alpha to gray out
+          element.setAlpha(0.4);
+        }
       } else {
-        // Keep active keys yellow
-        this.characterTexts[i].setTint(0xffff00);
+        // Keep active keys bright
+        if (element.setTint) {
+          // Text elements - keep yellow
+          element.setTint(0xffff00);
+        } else {
+          // Glyph sprites - keep original colors with full alpha
+          element.setAlpha(0.9);
+        }
       }
     }
   }

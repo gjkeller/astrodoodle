@@ -8,6 +8,9 @@ export default class MenuScene extends Phaser.Scene {
   
   create(): void {
     console.log('MenuScene: Creating menu...');
+    
+    // Don't stop VisualizerTestScene - let it persist for calibration
+    // Only stop it if we're switching away from wand mode entirely
 
     // Add background image on top (so we can see if it's working)
     const background = this.add.image(640, 360, 'background');

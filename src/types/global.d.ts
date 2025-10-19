@@ -24,6 +24,21 @@ export interface StrokePoint {
   y: number;
 }
 
+export interface LeaderboardEntry {
+  name: string;
+  score: number;
+  timestamp: number;
+}
+
+export interface LeaderboardStore {
+  entries: LeaderboardEntry[];
+  addScore(name: string, score: number): void;
+  getTopScores(limit?: number): LeaderboardEntry[];
+  clearScores(): void;
+  loadFromStorage(): void;
+  saveToStorage(): void;
+}
+
 export interface GameEvents {
   'player:ready': { playerId: PlayerId; ready: PlayerReadyState };
   'hud:score': { playerId: PlayerId; score: number };
@@ -32,6 +47,7 @@ export interface GameEvents {
   'game:win': { winner: PlayerId };
   'hud:stroke': { playerId: PlayerId; points: StrokePoint[] };
   'symbol:submit': { playerId: PlayerId; symbol: SymbolKind };
+  'leaderboard:score-added': { entry: LeaderboardEntry };
 }
 
 // Extend Phaser namespace for our custom types
