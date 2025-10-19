@@ -82,9 +82,13 @@ export default class BallTrackerScene extends Phaser.Scene {
       }
       if (this.domStatus) this.domStatus.textContent = "Cover the camera with the glowing ball to auto-calibrate.";
     });
-
-    // Create back button
-    this.createBackButton();
+    
+    // Add event listener for the HTML back button
+    const backBtn = document.getElementById("backBtn") as HTMLButtonElement | null;
+    backBtn?.addEventListener("click", () => {
+      this.cleanup();
+      this.scene.start('Settings');
+    });
   }
 
   private createHTMLControls() {
@@ -305,20 +309,38 @@ export default class BallTrackerScene extends Phaser.Scene {
             color: #e8f1ff;
           ">0</span>
         </div>
-        <button id="startBtn" style="
-          width: 100%;
-          padding: 10px 14px;
+        <div style="
+          display: flex;
+          gap: 10px;
           margin-top: 4px;
-          border: none;
-          border-radius: 10px;
-          background: linear-gradient(135deg, #2f7bff, #58c6ff);
-          color: #fff;
-          font-weight: 600;
-          letter-spacing: 0.08em;
-          text-transform: uppercase;
-          cursor: pointer;
-          transition: transform 0.2s ease, opacity 0.2s ease;
-        ">Start Camera</button>
+        ">
+          <button id="backBtn" style="
+            flex: 0.3;
+            padding: 10px 0;
+            border: none;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #666666, #888888);
+            color: #fff;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: transform 0.2s ease, opacity 0.2s ease;
+          ">Back</button>
+          <button id="startBtn" style="
+            flex: 0.7;
+            padding: 10px 0;
+            border: none;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #2f7bff, #58c6ff);
+            color: #fff;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: transform 0.2s ease, opacity 0.2s ease;
+          ">Start Camera</button>
+        </div>
       </div>
     `;
 
@@ -326,53 +348,7 @@ export default class BallTrackerScene extends Phaser.Scene {
     document.body.insertAdjacentHTML('beforeend', controlsHTML);
   }
 
-  private createBackButton() {
-    const buttonWidth = 150;
-    const buttonHeight = 50;
-    
-    const backButton = this.add.container(100, 50);
-    
-    // Create gray back button background
-    const bg = this.add.graphics();
-    bg.fillStyle(0x666666, 0.8);
-    bg.fillRoundedRect(-buttonWidth / 2, -buttonHeight / 2, buttonWidth, buttonHeight, 8);
-    bg.lineStyle(2, 0x888888, 1);
-    bg.strokeRoundedRect(-buttonWidth / 2, -buttonHeight / 2, buttonWidth, buttonHeight, 8);
-    
-    // Create back button text
-    const text = this.add.text(0, 0, 'BACK', {
-      fontSize: '16px',
-      color: '#ffffff',
-      fontFamily: 'Arial'
-    }).setOrigin(0.5, 0.5);
-    
-    backButton.add([bg, text]);
-    backButton.setSize(buttonWidth, buttonHeight);
-    backButton.setDepth(5);
-    
-    // Add hover effects
-    backButton.setInteractive();
-    backButton.on('pointerover', () => {
-      bg.clear();
-      bg.fillStyle(0x777777, 0.9);
-      bg.fillRoundedRect(-buttonWidth / 2, -buttonHeight / 2, buttonWidth, buttonHeight, 8);
-      bg.lineStyle(2, 0x999999, 1);
-      bg.strokeRoundedRect(-buttonWidth / 2, -buttonHeight / 2, buttonWidth, buttonHeight, 8);
-    });
-    
-    backButton.on('pointerout', () => {
-      bg.clear();
-      bg.fillStyle(0x666666, 0.8);
-      bg.fillRoundedRect(-buttonWidth / 2, -buttonHeight / 2, buttonWidth, buttonHeight, 8);
-      bg.lineStyle(2, 0x888888, 1);
-      bg.strokeRoundedRect(-buttonWidth / 2, -buttonHeight / 2, buttonWidth, buttonHeight, 8);
-    });
-    
-    backButton.on('pointerdown', () => {
-      this.cleanup();
-      this.scene.start('Settings');
-    });
-  }
+  // No longer needed as we're using an HTML back button
 
   private cleanup() {
     // Remove the HTML controls when leaving the scene
