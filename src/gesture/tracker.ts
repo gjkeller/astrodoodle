@@ -4,10 +4,26 @@ export type TimedPoint = [number, number, number];
 
 export const playerMap: Map<number, TimedPoint[]> = new Map();
 
+const DETECTION_COOLDOWN_MS = 200;
+const MIN_POINTS_TO_DETECT = 4;
+
 export function detectAllPlayers(): { results: Record<number, ReturnType<typeof detect>[]>; elapsedMs: number } {
     const start = performance.now();
     const results: Record<number, ReturnType<typeof detect>[]> = {};
     for (const [playerId, points] of playerMap.entries()) {
+        while (points.length > 0  && points[0][2] + MAX_TIME < performance.now()) {
+            points.splice(0, 1);
+        }
+
+        if (points.length < MIN_POINTS_TO_DETECT) {
+            continue;
+        }
+
+        const [, , lastTimestamp] = points[points.length - 1];
+        if (start - lastTimestamp < DETECTION_COOLDOWN_MS) {
+            continue;
+        }
+
         const detections: ReturnType<typeof detect>[] = [];
         for (let offset = 0; offset < points.length; offset += 5) {
             const slice = points.slice(offset);
@@ -25,19 +41,23 @@ export function detectAllPlayers(): { results: Record<number, ReturnType<typeof 
     return { results, elapsedMs: end - start };
 }
 
-const MAX_POINTS = 80;
+const MAX_TIME = 3000;
 
 export function addPoint(x: number, y: number, playerId: number) {
-    const timestamp = 0;
+    const timestamp = performance.now();
     const arr = playerMap.get(playerId);
     if (arr) {
         arr.push([x, y, timestamp]);
-        if (arr.length > MAX_POINTS) {
-            arr.splice(0, arr.length - MAX_POINTS);
+        while (arr.length > 0  && arr[0][2] + MAX_TIME < performance.now()) {
+            arr.splice(0, 1);
         }
     } else {
         playerMap.set(playerId, [[x, y, timestamp]]);
     }
+}
+
+export function deletePlayer(playerId: number): boolean {
+    return playerMap.delete(playerId);
 }
 
 /*

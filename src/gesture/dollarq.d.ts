@@ -7,7 +7,7 @@ export class Point {
     IntY: number;
 }
 
-export interface QDollarResult {
+export interface Result {
     Name: string;
     Score: number;
     Time: number;
@@ -19,7 +19,7 @@ export interface PointCloud {
     LUT: number[][];
 }
 
-declare class QDollarRecognizer {
+export declare class PDollarPlusRecognizer {
     PointClouds: PointCloud[];
     Recognize(points: Point[]): QDollarResult;
     AddGesture(name: string, points: Point[]): number;
