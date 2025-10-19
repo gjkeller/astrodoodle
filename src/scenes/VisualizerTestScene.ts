@@ -97,6 +97,7 @@ export default class VisualizerTestScene extends Phaser.Scene {
       const processed = this.vision.update();
       
       if (processed && this.vision.primaryX !== null && this.vision.primaryY !== null) {
+        // TODO: gabe look here for cv connected or not thingy
         // We have a valid position from the vision system
         this.currentPos = { 
           x: this.vision.primaryX, 
