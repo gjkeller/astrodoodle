@@ -171,9 +171,13 @@ export class VisionTuner {
     const imgData = this.rawCtx.getImageData(0, 0, this.W, this.H);
     this.src.data.set(imgData.data);
 
-    // Convert RGBA -> BGR -> HSV
+    // Convert RGBA -> BGR, apply optional brightness bias, then convert to HSV
     cv.cvtColor(this.src, this.bgr, cv.COLOR_RGBA2BGR);
-    this.bgr.copyTo(this.brightMat);
+    if (this.brightnessOffset !== 0) {
+      this.bgr.convertTo(this.brightMat, -1, 1, this.brightnessOffset);
+    } else {
+      this.bgr.copyTo(this.brightMat);
+    }
     cv.cvtColor(this.brightMat, this.hsv, cv.COLOR_BGR2HSV);
 
     // Look for the "lens covered" signal: five probe pixels converging in HSV space.
@@ -194,28 +198,33 @@ export class VisionTuner {
     }
 
     let result: SweepResult | null = null;
-    if (this.mode === "locked" && this.lockedParams) {
-      result = this.applyParams(this.lockedParams);
+    const paramsForMask = this.manualParams ?? this.lockedParams;
+    if (paramsForMask) {
+      result = this.applyParams(paramsForMask);
     }
 
     if (result) {
-      this.bestParams = { ...this.lockedParams! };
+      const effectiveParams = this.manualParams ?? this.lockedParams!;
+      this.bestParams = { ...effectiveParams };
       this.x = result.cx;
       this.y = result.cy;
       this.radius = result.radius;
       result.mask.copyTo(this.mask);
-      if (this.adaptiveFramesRemaining > 0) {
+      if (this.adaptiveFramesRemaining > 0 && !this.manualDirty && this.lockedParams) {
         this.updateHistoryFromMask(result.mask);
-        this.lockedParams = { ...this.refineParamsFromHistory(this.lockedParams!) };
-        this.bestParams = { ...this.lockedParams };
+        this.lockedParams = { ...this.refineParamsFromHistory(this.lockedParams) };
+        if (!this.manualDirty) {
+          this.manualParams = { ...this.lockedParams };
+          this.bestParams = { ...this.lockedParams };
+        }
         this.adaptiveFramesRemaining -= 1;
       }
     } else {
       this.x = null;
       this.y = null;
       this.radius = null;
-      if (this.mode === "locked" && this.lockedParams) {
-        this.bestParams = { ...this.lockedParams };
+      if (paramsForMask) {
+        this.bestParams = { ...paramsForMask };
       } else {
         this.bestParams = null;
       }
@@ -377,6 +386,8 @@ export class VisionTuner {
     this.historyHue = [];
     this.historySat = [];
     this.historyVal = [];
+    this.manualParams = { ...params };
+    this.manualDirty = false;
 
     if (result) {
       this.x = result.cx;
@@ -493,5 +504,65 @@ export class VisionTuner {
     if (values.length <= 1) return 0;
     const variance = values.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / (values.length - 1);
     return Math.sqrt(variance);
+  }
+
+  public setManualParam(key: keyof SweepParams, value: number) {
+    if (!this.manualParams) {
+      const base = this.lockedParams ? { ...this.lockedParams } : { hMin: 0, hMax: 179, sMin: 0, sMax: 255, vMin: 0, vMax: 255 };
+      this.manualParams = base;
+    }
+
+    const params = this.manualParams;
+    const val = Math.round(value);
+    switch (key) {
+      case "hMin":
+        params.hMin = this.clamp(val, 0, params.hMax);
+        if (params.hMin > params.hMax) params.hMax = params.hMin;
+        break;
+      case "hMax":
+        params.hMax = this.clamp(val, params.hMin, 179);
+        if (params.hMax < params.hMin) params.hMin = params.hMax;
+        break;
+      case "sMin":
+        params.sMin = this.clamp(val, 0, params.sMax);
+        if (params.sMin > params.sMax) params.sMax = params.sMin;
+        break;
+      case "sMax":
+        params.sMax = this.clamp(val, params.sMin, 255);
+        if (params.sMax < params.sMin) params.sMin = params.sMax;
+        break;
+      case "vMin":
+        params.vMin = this.clamp(val, 0, params.vMax);
+        if (params.vMin > params.vMax) params.vMax = params.vMin;
+        break;
+      case "vMax":
+        params.vMax = this.clamp(val, params.vMin, 255);
+        if (params.vMax < params.vMin) params.vMin = params.vMax;
+        break;
+    }
+
+    this.manualDirty = true;
+    this.bestParams = { ...params };
+    if (!this.lockedParams) {
+      this.mode = "locked";
+    }
+    this.adaptiveFramesRemaining = 0;
+  }
+
+  public setBrightness(value: number) {
+    const clamped = Math.max(-100, Math.min(100, Math.round(value)));
+    this.brightnessOffset = clamped;
+  }
+
+  public getBrightness() {
+    return this.brightnessOffset;
+  }
+
+  public getManualParams(): SweepParams | null {
+    return this.manualParams ? { ...this.manualParams } : null;
+  }
+
+  public isManualDirty() {
+    return this.manualDirty;
   }
 }
