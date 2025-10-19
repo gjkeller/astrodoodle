@@ -1,4 +1,4 @@
-import { detectAllPlayers, playerMap, deletePlayer } from "./gesture/tracker";
+import { detectAllPlayers, playerMap, deletePlayer, addPoint } from "./gesture/tracker";
 // Draw player 1 points on debug canvas every frame
 const debugCanvas = document.getElementById('debugPlayerMap') as HTMLCanvasElement | null;
 const debugCtx = debugCanvas?.getContext('2d') ?? undefined;
@@ -150,6 +150,7 @@ class SweepScene extends Phaser.Scene {
       const message = `x: ${Math.round(x)}, y: ${Math.round(y)}`;
       this.posText.setText(message);
       if (this.domPos) this.domPos.textContent = message;
+	  addPoint(x,y, 1);
     } else {
       this.posText.setText("x: –, y: –");
       if (this.domPos) this.domPos.textContent = "–, –";
