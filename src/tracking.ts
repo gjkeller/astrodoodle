@@ -18,6 +18,7 @@ type SweepResult = {
   cx: number;
   cy: number;
   radius: number;
+  coverage: number;
 };
 
 type Mode = "idle" | "locked";
@@ -64,7 +65,11 @@ export class VisionTuner {
   private mode: Mode = "idle";
   private uniformStreak = 0;
   private uniformSample: [number, number, number] | null = null;
-  private toleranceScale = 1.0;
+  private historyHue: number[] = [];
+  private historySat: number[] = [];
+  private historyVal: number[] = [];
+  private readonly historySize = 30;
+  private adaptiveFramesRemaining = 0;
 
   constructor(width = 640, height = 480) {
     this.W = width;
@@ -157,6 +162,7 @@ export class VisionTuner {
     this.bgr.copyTo(this.brightMat);
     cv.cvtColor(this.brightMat, this.hsv, cv.COLOR_BGR2HSV);
 
+    // Look for the "lens covered" signal: five probe pixels converging in HSV space.
     const uniformSample = this.sampleUniformColor();
     if (uniformSample) {
       this.uniformStreak += 1;
@@ -166,6 +172,7 @@ export class VisionTuner {
       this.uniformSample = null;
     }
 
+    // After 10 consistent frames, treat the sample as the calibration frame.
     if (this.uniformSample && this.uniformStreak >= 10) {
       this.setLockFromUniformSample(this.uniformSample);
       this.uniformStreak = 0;
@@ -183,6 +190,12 @@ export class VisionTuner {
       this.y = result.cy;
       this.radius = result.radius;
       result.mask.copyTo(this.mask);
+      if (this.adaptiveFramesRemaining > 0) {
+        this.updateHistoryFromMask(result.mask);
+        this.lockedParams = { ...this.refineParamsFromHistory(this.lockedParams!) };
+        this.bestParams = { ...this.lockedParams };
+        this.adaptiveFramesRemaining -= 1;
+      }
     } else {
       this.x = null;
       this.y = null;
@@ -203,6 +216,7 @@ export class VisionTuner {
   }
 
   private applyParams(params: SweepParams): SweepResult | null {
+    // Build a binary mask from the HSV limits and grade the best contour.
     const low = new cv.Mat(this.H, this.W, this.hsv.type(), [params.hMin, params.sMin, params.vMin, 0]);
     const high = new cv.Mat(this.H, this.W, this.hsv.type(), [params.hMax, params.sMax, params.vMax, 255]);
 
@@ -219,6 +233,7 @@ export class VisionTuner {
 
     let bestScore = 0;
     let best: SweepResult | null = null;
+    const coverage = cv.countNonZero(this.tempMask) / (this.W * this.H);
 
     for (let i = 0; i < this.contours.size(); i++) {
       const cnt = this.contours.get(i);
@@ -255,10 +270,25 @@ export class VisionTuner {
           score,
           cx,
           cy,
-          radius
+          radius,
+          coverage
         };
       }
       cnt.delete();
+    }
+
+    if (!best && coverage > 0) {
+      this.tempMask.copyTo(this.bestMask);
+      const estimatedRadius = Math.sqrt((coverage * this.W * this.H) / Math.PI);
+      best = {
+        mask: this.bestMask,
+        params,
+        score: coverage,
+        cx: this.W / 2,
+        cy: this.H / 2,
+        radius: estimatedRadius,
+        coverage
+      };
     }
 
     return best;
@@ -310,41 +340,22 @@ export class VisionTuner {
   }
 
   private setLockFromUniformSample(sample: [number, number, number]) {
-    const [hAvg, sAvg, vAvg] = sample;
-    const t = this.toleranceScale;
-    const hueBase = 16;
-    const satBaseLow = 60;
-    const satBaseHigh = 45;
-    const valBaseLow = 45;
-    const valBaseHigh = 45;
-
-    const params: SweepParams = {
-      hMin: this.clamp(Math.round(hAvg - hueBase * t), 0, 179),
-      hMax: this.clamp(Math.round(hAvg + hueBase * t), 0, 179),
-      sMin: this.clamp(Math.round(sAvg - satBaseLow * t), 0, 255),
-      sMax: this.clamp(Math.round(sAvg + satBaseHigh * t), 0, 255),
-      vMin: this.clamp(Math.round(vAvg - valBaseLow * t), 0, 255),
-      vMax: this.clamp(Math.round(vAvg + valBaseHigh * t), 0, 255)
-    };
-
-    if (params.hMax - params.hMin < 12) {
-      const mid = Math.round((params.hMax + params.hMin) / 2);
-      params.hMin = this.clamp(mid - 12, 0, 179);
-      params.hMax = this.clamp(mid + 12, 0, 179);
-    }
-    if (params.sMin < 40) params.sMin = 40;
-    if (params.vMin < 60) params.vMin = 60;
-
+    const params = this.buildParams(sample, 1.0);
+    const result = this.applyParams(params);
     this.lockedParams = { ...params };
     this.bestParams = { ...params };
     this.mode = "locked";
+    this.adaptiveFramesRemaining = 10;
+    this.historyHue = [];
+    this.historySat = [];
+    this.historyVal = [];
 
-    const immediate = this.applyParams(params);
-    if (immediate) {
-      this.x = immediate.cx;
-      this.y = immediate.cy;
-      this.radius = immediate.radius;
-      immediate.mask.copyTo(this.mask);
+    if (result) {
+      this.x = result.cx;
+      this.y = result.cy;
+      this.radius = result.radius;
+      result.mask.copyTo(this.mask);
+      this.updateHistoryFromMask(result.mask);
     } else {
       this.x = null;
       this.y = null;
@@ -357,19 +368,102 @@ export class VisionTuner {
     this.mode = "idle";
     this.lockedParams = null;
     this.bestParams = null;
+    this.historyHue = [];
+    this.historySat = [];
+    this.historyVal = [];
+    this.adaptiveFramesRemaining = 0;
   }
 
   public isLocked() {
     return this.mode === "locked" && this.lockedParams !== null;
   }
 
-  public setTolerance(scale: number) {
-    this.toleranceScale = Math.max(0.5, Math.min(scale, 5));
+  private buildParams(sample: [number, number, number], scale: number): SweepParams {
+    const [hAvg, sAvg, vAvg] = sample;
+    const hueBase = 16;
+    const satBaseLow = 60;
+    const satBaseHigh = 45;
+    const valBaseLow = 45;
+    const valBaseHigh = 45;
+
+    const params: SweepParams = {
+      hMin: this.clamp(Math.round(hAvg - hueBase * scale) - 10, 0, 179),
+      hMax: this.clamp(Math.round(hAvg + hueBase * scale), 0, 179),
+      sMin: this.clamp(Math.round(sAvg - satBaseLow * scale), 0, 255),
+      sMax: this.clamp(Math.round(sAvg + satBaseHigh * scale), 0, 255),
+      // Drop Vmin a touch so the ball stays in range once the camera brightens post-calibration.
+      vMin: this.clamp(Math.round(vAvg - valBaseLow * scale) - 10, 0, 255),
+      vMax: this.clamp(Math.round(vAvg + valBaseHigh * scale), 0, 255)
+    };
+
+    if (params.hMax - params.hMin < 12) {
+      const mid = Math.round((params.hMax + params.hMin) / 2);
+      params.hMin = this.clamp(mid - 12, 0, 179);
+      params.hMax = this.clamp(mid + 12, 0, 179);
+    }
+    if (params.sMin < 40) params.sMin = 40;
+    if (params.vMin < 60) params.vMin = 60;
+
+    return params;
   }
 
   private clamp(value: number, min: number, max: number) {
     if (value < min) return min;
     if (value > max) return max;
     return value;
+  }
+
+  // Capture running HSV means from the current mask to smooth early post-lock frames.
+  private updateHistoryFromMask(mask: any) {
+    if (!mask) return;
+    const mean = new cv.Mat();
+    const std = new cv.Mat();
+    cv.meanStdDev(this.hsv, mean, std, mask);
+    const meanData = mean.data64F as Float64Array | undefined;
+    const meanVals = meanData ? Array.from(meanData) : [];
+    std.delete();
+    mean.delete();
+    if (meanVals.length < 3) return;
+    const [h, s, v] = meanVals;
+    this.historyHue.push(h);
+    this.historySat.push(s);
+    this.historyVal.push(v);
+    if (this.historyHue.length > this.historySize) this.historyHue.shift();
+    if (this.historySat.length > this.historySize) this.historySat.shift();
+    if (this.historyVal.length > this.historySize) this.historyVal.shift();
+  }
+
+  // Convert the history window into a slightly widened HSV band.
+  private refineParamsFromHistory(current: SweepParams): SweepParams {
+    if (!this.historyHue.length) return current;
+    const hMean = this.average(this.historyHue);
+    const sMean = this.average(this.historySat);
+    const vMean = this.average(this.historyVal);
+    const hStd = this.stddev(this.historyHue, hMean);
+    const sStd = this.stddev(this.historySat, sMean);
+    const vStd = this.stddev(this.historyVal, vMean);
+
+    const hTol = Math.max(8, hStd * 4);
+    const sTol = Math.max(40, sStd * 4);
+    const vTol = Math.max(40, vStd * 4);
+
+    return {
+      hMin: this.clamp(Math.round(hMean - hTol), 0, 179),
+      hMax: this.clamp(Math.round(hMean + hTol), 0, 179),
+      sMin: this.clamp(Math.round(sMean - sTol), 0, 255),
+      sMax: this.clamp(Math.round(sMean + sTol), 0, 255),
+      vMin: this.clamp(Math.round(vMean - vTol), 0, 255),
+      vMax: this.clamp(Math.round(vMean + vTol), 0, 255)
+    };
+  }
+
+  private average(values: number[]) {
+    return values.reduce((sum, v) => sum + v, 0) / values.length;
+  }
+
+  private stddev(values: number[], mean: number) {
+    if (values.length <= 1) return 0;
+    const variance = values.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / (values.length - 1);
+    return Math.sqrt(variance);
   }
 }

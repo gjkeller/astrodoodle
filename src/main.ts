@@ -13,8 +13,6 @@ class SweepScene extends Phaser.Scene {
   private domStatus?: HTMLElement;
   private domPos?: HTMLElement;
   private domParams?: HTMLElement;
-  private tolLabel?: HTMLElement;
-  private tolSlider?: HTMLInputElement;
   private cameraStarted = false;
 
   constructor() {
@@ -45,8 +43,6 @@ class SweepScene extends Phaser.Scene {
     this.domStatus = document.getElementById("status") ?? undefined;
     this.domPos = document.getElementById("posDisplay") ?? undefined;
     this.domParams = document.getElementById("paramDisplay") ?? undefined;
-    this.tolLabel = document.getElementById("tolValue") ?? undefined;
-    this.tolSlider = document.getElementById("tolRange") as HTMLInputElement | null ?? undefined;
 
     const startBtn = document.getElementById("startBtn") as HTMLButtonElement | null;
     if (startBtn) {
@@ -71,19 +67,6 @@ class SweepScene extends Phaser.Scene {
       if (this.domStatus) this.domStatus.textContent = "Cover the camera with the glowing ball to auto-calibrate.";
     });
 
-    this.tolSlider?.addEventListener("input", () => {
-      const slider = this.tolSlider;
-      if (!slider) return;
-      const tolerance = Number(slider.value);
-      this.vis.setTolerance(tolerance / 10);
-      if (this.tolLabel) this.tolLabel.textContent = `${(tolerance / 10).toFixed(1)}x`;
-    });
-
-    if (this.tolSlider) {
-      const tolerance = Number(this.tolSlider.value);
-      this.vis.setTolerance(tolerance / 10);
-      if (this.tolLabel) this.tolLabel.textContent = `${(tolerance / 10).toFixed(1)}x`;
-    }
   }
 
   update() {
@@ -118,7 +101,7 @@ class SweepScene extends Phaser.Scene {
     const activeParams = this.vis.bestParams || this.vis.lockedParams;
     if (activeParams) {
       const p = activeParams;
-      const text = `HSV: H[${p.hMin}-${p.hMax}], S≥${p.sMin}, V≥${p.vMin}`;
+      const text = `HSV: H[${p.hMin}-${p.hMax}], S[${p.sMin}-${p.sMax}], V[${p.vMin}-${p.vMax}]`;
       this.hsvText.setText(text);
       if (this.domParams) this.domParams.textContent = text;
     } else {
