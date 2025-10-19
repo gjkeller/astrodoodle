@@ -48,6 +48,28 @@
       border-radius: 12px;
       border: 1px solid rgba(255, 255, 255, 0.06);
     }
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .slider-row label {
+      width: 64px;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #8f9bb9;
+    }
+    .slider-row input[type=range] {
+      flex: 1;
+    }
+    .slider-row span {
+      width: 46px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      color: #e8f1ff;
+    }
     .stat-label {
       font-size: 12px;
       letter-spacing: 0.08em;
@@ -105,6 +127,41 @@
         <span class="stat-label">Best HSV</span>
         <span class="stat-value" id="paramDisplay">–</span>
       </div>
+    </div>
+    <div class="slider-row">
+      <label for="slider-hMin">H Min</label>
+      <input id="slider-hMin" type="range" min="0" max="179" value="0">
+      <span id="value-hMin">0</span>
+    </div>
+    <div class="slider-row">
+      <label for="slider-hMax">H Max</label>
+      <input id="slider-hMax" type="range" min="0" max="179" value="179">
+      <span id="value-hMax">179</span>
+    </div>
+    <div class="slider-row">
+      <label for="slider-sMin">S Min</label>
+      <input id="slider-sMin" type="range" min="0" max="255" value="0">
+      <span id="value-sMin">0</span>
+    </div>
+    <div class="slider-row">
+      <label for="slider-sMax">S Max</label>
+      <input id="slider-sMax" type="range" min="0" max="255" value="255">
+      <span id="value-sMax">255</span>
+    </div>
+    <div class="slider-row">
+      <label for="slider-vMin">V Min</label>
+      <input id="slider-vMin" type="range" min="0" max="255" value="0">
+      <span id="value-vMin">0</span>
+    </div>
+    <div class="slider-row">
+      <label for="slider-vMax">V Max</label>
+      <input id="slider-vMax" type="range" min="0" max="255" value="255">
+      <span id="value-vMax">255</span>
+    </div>
+    <div class="slider-row">
+      <label for="slider-bright">Bright</label>
+      <input id="slider-bright" type="range" min="-100" max="100" value="0">
+      <span id="value-bright">0</span>
     </div>
     <button id="startBtn">Start Camera</button>
   </div>

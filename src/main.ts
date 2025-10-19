@@ -42,7 +42,7 @@ setInterval(() => {
 	}
 }, 100);
 import Phaser from "phaser";
-import { VisionTuner } from "./tracking";
+import { VisionTuner, SweepParams } from "./tracking";
 
 class SweepScene extends Phaser.Scene {
   private vis!: VisionTuner;
@@ -56,6 +56,14 @@ class SweepScene extends Phaser.Scene {
   private domPos?: HTMLElement;
   private domParams?: HTMLElement;
   private cameraStarted = false;
+  private sliderBindings: Partial<Record<keyof SweepParams, { input: HTMLInputElement; value: HTMLElement }>> = {};
+  private brightnessInput?: HTMLInputElement;
+  private brightnessValue?: HTMLElement;
+  private updatingSliders = false;
+  private lastSyncedParams: SweepParams | null = null;
+  private lastSyncedBrightness = 0;
+  private frameCount = 0;
+  private lastFpsCheck = performance.now();
 
   constructor() {
     super("SweepScene");
@@ -87,6 +95,8 @@ class SweepScene extends Phaser.Scene {
     this.domPos = document.getElementById("posDisplay") ?? undefined;
     this.domParams = document.getElementById("paramDisplay") ?? undefined;
 
+    this.setupManualControls();
+
     const startBtn = document.getElementById("startBtn") as HTMLButtonElement | null;
     if (startBtn) {
       startBtn.disabled = true;
@@ -112,30 +122,31 @@ class SweepScene extends Phaser.Scene {
 
   }
 
-	update() {
-		// Pump vision and track FPS only when a frame was processed
-		const processed = this.vis.update();
-		if (processed) {
-			this.frameCount++;
-			const now = performance.now();
-			if (now - this.lastFpsCheck > 1000) {
-				const fps = Math.round((this.frameCount * 1000) / (now - this.lastFpsCheck));
-				console.log('OpenCV FPS:', fps);
-				this.lastFpsCheck = now;
-				this.frameCount = 0;
-			}
-		}
+  update() {
+    // Pump vision and track FPS only when a frame was processed
+    const processed = this.vis.update();
+    if (processed) {
+      this.frameCount++;
+      const now = performance.now();
+      if (now - this.lastFpsCheck > 1000) {
+        const fps = Math.round((this.frameCount * 1000) / (now - this.lastFpsCheck));
+        console.log("OpenCV FPS:", fps);
+        this.lastFpsCheck = now;
+        this.frameCount = 0;
+      }
+    }
 
-		// Refresh Phaser textures from canvases
-		const rawTex = this.textures.get("raw") as Phaser.Textures.CanvasTexture;
-		const maskTex = this.textures.get("mask") as Phaser.Textures.CanvasTexture;
-		rawTex.context.drawImage(this.vis.rawCanvas, 0, 0);
-		maskTex.context.drawImage(this.vis.maskCanvas, 0, 0);
-		rawTex.refresh();
-		maskTex.refresh();
+    this.syncManualControls();
 
+    // Refresh Phaser textures from canvases
+    const rawTex = this.textures.get("raw") as Phaser.Textures.CanvasTexture;
+    const maskTex = this.textures.get("mask") as Phaser.Textures.CanvasTexture;
+    rawTex.context.drawImage(this.vis.rawCanvas, 0, 0);
+    maskTex.context.drawImage(this.vis.maskCanvas, 0, 0);
+    rawTex.refresh();
+    maskTex.refresh();
 
-		// Draw overlay crosshair on left view
+    // Draw overlay crosshair on left view
     this.overlay.clear();
     if (this.vis.x !== null && this.vis.y !== null && this.vis.radius !== null) {
       const x = this.vis.x;
@@ -172,6 +183,80 @@ class SweepScene extends Phaser.Scene {
         ? "Tracking locked. Cover the camera again to refresh."
         : "Waiting for auto-calibration… cover the camera with the glowing ball.";
     }
+  }
+
+  private setupManualControls() {
+    const sliderDefs: Array<{ key: keyof SweepParams; inputId: string; valueId: string; step?: number }> = [
+      { key: "hMin", inputId: "slider-hMin", valueId: "value-hMin" },
+      { key: "hMax", inputId: "slider-hMax", valueId: "value-hMax" },
+      { key: "sMin", inputId: "slider-sMin", valueId: "value-sMin" },
+      { key: "sMax", inputId: "slider-sMax", valueId: "value-sMax" },
+      { key: "vMin", inputId: "slider-vMin", valueId: "value-vMin" },
+      { key: "vMax", inputId: "slider-vMax", valueId: "value-vMax" }
+    ];
+
+    sliderDefs.forEach(({ key, inputId, valueId, step }) => {
+      const input = document.getElementById(inputId) as HTMLInputElement | null;
+      const valueEl = document.getElementById(valueId);
+      if (!input || !valueEl) return;
+      if (step) input.step = step.toString();
+      this.sliderBindings[key] = { input, value: valueEl };
+      valueEl.textContent = input.value;
+      input.addEventListener("input", () => {
+        if (this.updatingSliders) return;
+        const val = Number(input.value);
+        this.vis.setManualParam(key, val);
+        valueEl.textContent = String(Math.round(val));
+        this.lastSyncedParams = null;
+      });
+    });
+
+    this.brightnessInput = document.getElementById("slider-bright") as HTMLInputElement | null ?? undefined;
+    this.brightnessValue = document.getElementById("value-bright") ?? undefined;
+    if (this.brightnessInput && this.brightnessValue) {
+      this.brightnessValue.textContent = this.brightnessInput.value;
+      this.brightnessInput.addEventListener("input", () => {
+        const val = Number(this.brightnessInput!.value);
+        this.vis.setBrightness(val);
+        this.brightnessValue!.textContent = `${val >= 0 ? "+" : ""}${val}`;
+        this.lastSyncedBrightness = val;
+      });
+    }
+  }
+
+  private syncManualControls() {
+    const manual = this.vis.getManualParams();
+    if (manual && !this.vis.isManualDirty()) {
+      if (!this.lastSyncedParams || !this.paramsEqual(this.lastSyncedParams, manual)) {
+        this.updatingSliders = true;
+        (Object.keys(this.sliderBindings) as Array<keyof SweepParams>).forEach((key) => {
+          const binding = this.sliderBindings[key];
+          if (!binding) return;
+          const val = manual[key];
+          binding.input.value = String(Math.round(val));
+          binding.value.textContent = String(Math.round(val));
+        });
+        this.updatingSliders = false;
+        this.lastSyncedParams = { ...manual };
+      }
+    }
+
+    if (this.brightnessInput && this.brightnessValue) {
+      const currentBright = this.vis.getBrightness();
+      if (currentBright !== this.lastSyncedBrightness) {
+        this.updatingSliders = true;
+        this.brightnessInput.value = String(currentBright);
+        this.brightnessValue.textContent = `${currentBright >= 0 ? "+" : ""}${currentBright}`;
+        this.updatingSliders = false;
+        this.lastSyncedBrightness = currentBright;
+      }
+    }
+  }
+
+  private paramsEqual(a: SweepParams, b: SweepParams) {
+    return a.hMin === b.hMin && a.hMax === b.hMax &&
+      a.sMin === b.sMin && a.sMax === b.sMax &&
+      a.vMin === b.vMin && a.vMax === b.vMax;
   }
 }
 

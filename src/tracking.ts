@@ -75,6 +75,9 @@ export class VisionTuner {
   private historyVal: number[] = [];
   private readonly historySize = 30;
   private adaptiveFramesRemaining = 0;
+  private manualParams: SweepParams | null = null;
+  private manualDirty = false;
+  private brightnessOffset = 0;
 
   constructor(width = 640, height = 480) {
     this.W = width;
