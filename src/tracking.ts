@@ -72,7 +72,9 @@ export class VisionTuner {
     this.rawCtx = rawCtx;
     this.maskCtx = maskCtx;
 
-    this.calibrator = new CalibrationManager(this.W, this.H, MAX_BALLS, INITIAL_HUE_TOLERANCE);
+    // Load saved hue tolerance or use default
+    const savedHueTolerance = this.loadHueToleranceFromStorage();
+    this.calibrator = new CalibrationManager(this.W, this.H, MAX_BALLS, savedHueTolerance);
 
     // Wait until the OpenCV runtime is available.
     this.cvReadyPromise = new Promise<void>((resolve) => {
@@ -183,10 +185,38 @@ export class VisionTuner {
 
   public setHueTolerance(degrees: number) {
     this.calibrator.setHueTolerance(degrees);
+    // Save to localStorage whenever the value is changed
+    this.saveHueToleranceToStorage(degrees);
   }
 
   public getHueTolerance() {
     return this.calibrator.getHueTolerance();
+  }
+
+  private saveHueToleranceToStorage(hueValue: number): void {
+    try {
+      localStorage.setItem('visionTuner_hueTolerance', hueValue.toString());
+    } catch (error) {
+      console.warn('Failed to save hue tolerance to localStorage:', error);
+    }
+  }
+
+  private loadHueToleranceFromStorage(): number {
+    try {
+      const saved = localStorage.getItem('visionTuner_hueTolerance');
+      if (saved !== null) {
+        const parsed = Number(saved);
+        // Validate the range (should be reasonable values)
+        if (!isNaN(parsed) && parsed >= 4 && parsed <= 40) {
+          return parsed;
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to load hue tolerance from localStorage:', error);
+    }
+    
+    // Return default value if loading failed or value is invalid
+    return INITIAL_HUE_TOLERANCE;
   }
 
   public clearBalls() {
