@@ -112,9 +112,6 @@ export default class BallTrackerScene extends Phaser.Scene {
     this.renderBallList(this.vis.getTrackedBalls());
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.cleanup());
-
-    // Create back button
-    this.createBackButton();
   }
 
   private createHTMLControls() {
