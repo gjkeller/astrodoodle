@@ -63,36 +63,22 @@ class SweepScene extends Phaser.Scene {
 
   preload() {}
 
+
   async create() {
     const W = 640;
     const H = 480;
     const gap = 16;
 
-		// Vision Tuner
-		this.vis = new VisionTuner(W, H);
     this.vis = new VisionTuner(W, H);
 
     this.textures.addCanvas("raw", this.vis.rawCanvas);
     this.textures.addCanvas("mask", this.vis.maskCanvas);
 
-		this.rawImage = this.add.image(0, 0, "raw").setOrigin(0, 0);
-		void this.rawImage;
-		this.maskImage = this.add.image(W + gap, 0, "mask").setOrigin(0, 0);
-		void this.maskImage;
+    this.rawImage = this.add.image(0, 0, "raw").setOrigin(0, 0);
+    this.maskImage = this.add.image(W + gap, 0, "mask").setOrigin(0, 0);
 
     this.scale.resize(W * 2 + gap, H);
 
-		// Overlay graphics (crosshair)
-		this.gfx = this.add.graphics();
-		this.posText = this.add.text(10, 10, "x: –, y: –", { color: "#ffffff", fontSize: "18px" });
-		this.domPosEl = document.getElementById("posDisplay") ?? undefined;
-
-		// Bind Start button (user gesture required for some browsers to play video)
-		const startBtn = document.getElementById("startBtn") as HTMLButtonElement | null;
-		if (startBtn) {
-			startBtn.disabled = true;
-			startBtn.textContent = "Loading OpenCV…";
-		}
     this.overlay = this.add.graphics();
     this.posText = this.add.text(12, 12, "x: –, y: –", { color: "#ffffff", fontSize: "18px" });
     this.hsvText = this.add.text(12, 36, "HSV: –, –, –", { color: "#8bd9ff", fontSize: "16px" });
@@ -107,11 +93,6 @@ class SweepScene extends Phaser.Scene {
       startBtn.textContent = "Loading OpenCV…";
     }
 
-		this.vis.whenReady().then(() => {
-			if (!startBtn) return;
-			startBtn.disabled = false;
-			startBtn.textContent = "Start Camera";
-		});
     this.vis.whenReady().then(() => {
       if (!startBtn) return;
       startBtn.disabled = false;
@@ -119,30 +100,6 @@ class SweepScene extends Phaser.Scene {
       if (this.domStatus) this.domStatus.textContent = "Ready. Allow camera access and click start.";
     });
 
-		startBtn?.addEventListener("click", async () => {
-			await this.vis.startCamera();
-			startBtn.setAttribute("disabled", "true");
-			startBtn.textContent = "Camera Running";
-		});
-
-		// Bind sliders to params
-		const bind = (id: string, key: keyof TunerParams) => {
-			const el = document.getElementById(id) as HTMLInputElement;
-			const label = document.getElementById(id + "V");
-			const handler = () => {
-				const val = Number(el.value);
-				if (label) label.textContent = String(val);
-				this.vis.setParams({ [key]: val } as Partial<TunerParams>);
-			};
-			el?.addEventListener("input", handler);
-			handler();
-		};
-
-		bind("hMin", "hMin"); bind("hMax", "hMax");
-		bind("sMin", "sMin"); bind("sMax", "sMax");
-		bind("vMin", "vMin"); bind("vMax", "vMax");
-		bind("bright", "bright");
-	}
     startBtn?.addEventListener("click", async () => {
       await this.vis.startCamera();
       this.cameraStarted = true;
@@ -168,8 +125,6 @@ class SweepScene extends Phaser.Scene {
 				this.frameCount = 0;
 			}
 		}
-  update() {
-    this.vis.update();
 
 		// Refresh Phaser textures from canvases
 		const rawTex = this.textures.get("raw") as Phaser.Textures.CanvasTexture;
@@ -178,18 +133,9 @@ class SweepScene extends Phaser.Scene {
 		maskTex.context.drawImage(this.vis.maskCanvas, 0, 0);
 		rawTex.refresh();
 		maskTex.refresh();
-    const rawTex = this.textures.get("raw") as Phaser.Textures.CanvasTexture;
-    const maskTex = this.textures.get("mask") as Phaser.Textures.CanvasTexture;
-    rawTex.context.drawImage(this.vis.rawCanvas, 0, 0);
-    maskTex.context.drawImage(this.vis.maskCanvas, 0, 0);
-    rawTex.refresh();
-    maskTex.refresh();
+
 
 		// Draw overlay crosshair on left view
-		this.gfx.clear();
-		if (this.vis.x !== null && this.vis.y !== null) {
-			const x = this.vis.x;
-			const y = this.vis.y;
     this.overlay.clear();
     if (this.vis.x !== null && this.vis.y !== null && this.vis.radius !== null) {
       const x = this.vis.x;
