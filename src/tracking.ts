@@ -1,5 +1,5 @@
 // src/tracking.ts
-// Tell TS about the global OpenCV symbol.
+// Tell TypeScript about the global OpenCV symbol that ships with opencv.js.
 declare const cv: any;
 
 export type SweepParams = {
@@ -11,20 +11,30 @@ export type SweepParams = {
   vMax: number;
 };
 
-// Key used for localStorage
-const SWEEP_PARAMS_STORAGE_KEY = "vision_tuner_sweep_params";
+export type TrackedBall = {
+  id: number;
+  centerHue: number;
+  params: SweepParams;
+  x: number | null;
+  y: number | null;
+  radius: number | null;
+  coverage: number;
+};
 
 type SweepResult = {
-  mask: any;
-  params: SweepParams;
-  score: number;
   cx: number;
   cy: number;
   radius: number;
   coverage: number;
+  score: number;
 };
 
 type Mode = "idle" | "locked";
+
+const SAT_RANGE: [number, number] = [190, 255];
+const VAL_RANGE: [number, number] = [210, 255];
+const MAX_BALLS = 2;
+const UNIFORM_FRAMES_REQUIRED = 10;
 
 export class VisionTuner {
   // DOM/video
@@ -38,62 +48,46 @@ export class VisionTuner {
   private rawCtx: CanvasRenderingContext2D;
   private maskCtx: CanvasRenderingContext2D;
 
-  // OpenCV Mats
+  // OpenCV Mats (reused each frame)
   private src!: any;          // RGBA
   private bgr!: any;          // BGR
   private hsv!: any;          // HSV
-  private mask!: any;         // 8U mask (display)
-  private tempMask!: any;     // sweep scratch
+  private mask!: any;         // combined mask rendered for display
+  private tempMask!: any;     // per-ball mask scratch
   private workMask!: any;     // contour scratch
-  private bestMask!: any;     // winning mask copy
-  private brightMat!: any;    // for brightness addWeighted
   private contours!: any;
   private hierarchy!: any;
   private kernel!: any;
 
-  // Ball position
-  public x: number | null = null;
-  public y: number | null = null;
-  public radius: number | null = null;
-  public bestParams: SweepParams | null = null;
-  public lockedParams: SweepParams | null = null;
+  // Tracking state
+  private mode: Mode = "idle";
+  private uniformStreak = 0;
+  private uniformSample: [number, number, number] | null = null;
+  private hueTolerance = 16; // degrees
+  private balls: TrackedBall[] = [];
+  private nextBallId = 1;
 
-  // Config
-  private W = 640;
-  private H = 480;
+  // Convenience exports for legacy consumers
+  public primaryX: number | null = null;
+  public primaryY: number | null = null;
+  public primaryRadius: number | null = null;
+  public primaryParams: SweepParams | null = null;
 
-  private cvReady = false;
-  private started = false;
-  private cvReadyPromise: Promise<void>;
+  // Frame throttling / FPS monitor
   private readonly targetFrameMs = 1000 / 30;
   private lastProcessTime = 0;
   private fpsWindowStart = performance.now();
   private processedFrames = 0;
   private lowFpsAlertShown = false;
-  private mode: Mode = "idle";
-  private uniformStreak = 0;
-  private uniformSample: [number, number, number] | null = null;
-  private historyHue: number[] = [];
-  private historySat: number[] = [];
-  private historyVal: number[] = [];
-  private readonly historySize = 30;
-  private adaptiveFramesRemaining = 0;
-  private manualParams: SweepParams | null = null;
-  private manualDirty = false;
-  private brightnessOffset = 0;
 
-  constructor(width = 640, height = 480) {
-    this.W = width;
-    this.H = height;
+  // OpenCV readiness
+  private cvReady = false;
+  private started = false;
+  private cvReadyPromise: Promise<void>;
 
-    // Try to load saved params from localStorage
-    this.loadSavedParams();
-
-    // Start the autosave interval - save every 1 second
-    this.startAutoSave();
-
+  constructor(private W = 640, private H = 480) {
     this.video = document.createElement("video");
-    this.video.setAttribute("playsinline", "true"); // iOS/Safari
+    this.video.setAttribute("playsinline", "true");
     this.video.muted = true;
     this.video.autoplay = true;
     this.video.width = this.W;
@@ -109,12 +103,13 @@ export class VisionTuner {
     this.maskCanvas.width = this.W;
     this.maskCanvas.height = this.H;
 
-    const rctx = this.rawCanvas.getContext("2d");
-    const mctx = this.maskCanvas.getContext("2d");
-    if (!rctx || !mctx) throw new Error("Canvas 2D unavailable");
-    this.rawCtx = rctx;
-    this.maskCtx = mctx;
+    const rawCtx = this.rawCanvas.getContext("2d");
+    const maskCtx = this.maskCanvas.getContext("2d");
+    if (!rawCtx || !maskCtx) throw new Error("Canvas 2D unavailable");
+    this.rawCtx = rawCtx;
+    this.maskCtx = maskCtx;
 
+    // Wait until the OpenCV runtime is available.
     this.cvReadyPromise = new Promise<void>((resolve) => {
       const tick = () => {
         const runtime = (window as any).cv;
@@ -144,15 +139,13 @@ export class VisionTuner {
     this.video.srcObject = this.stream;
     await this.video.play();
 
-    // Allocate Mats
-    this.src = new cv.Mat(this.H, this.W, cv.CV_8UC4);      // RGBA from canvas
+    // Allocate OpenCV Mats once.
+    this.src = new cv.Mat(this.H, this.W, cv.CV_8UC4);
     this.bgr = new cv.Mat(this.H, this.W, cv.CV_8UC3);
     this.hsv = new cv.Mat(this.H, this.W, cv.CV_8UC3);
     this.mask = new cv.Mat(this.H, this.W, cv.CV_8UC1);
     this.tempMask = new cv.Mat(this.H, this.W, cv.CV_8UC1);
     this.workMask = new cv.Mat(this.H, this.W, cv.CV_8UC1);
-    this.bestMask = new cv.Mat(this.H, this.W, cv.CV_8UC1);
-    this.brightMat = new cv.Mat(this.H, this.W, cv.CV_8UC3);
     this.contours = new cv.MatVector();
     this.hierarchy = new cv.Mat();
     this.kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(5, 5));
@@ -161,8 +154,7 @@ export class VisionTuner {
   }
 
   public update(): boolean {
-    if (!this.started) return false;
-    if (!this.cvReady) return false;
+    if (!this.started || !this.cvReady) return false;
 
     const now = performance.now();
     if (this.lastProcessTime && now - this.lastProcessTime < this.targetFrameMs) {
@@ -170,88 +162,80 @@ export class VisionTuner {
     }
     this.lastProcessTime = now;
 
-    // Draw live frame (mirrored for selfie view)
+    // Mirror the video feed into the raw canvas.
     this.rawCtx.save();
     this.rawCtx.scale(-1, 1);
     this.rawCtx.drawImage(this.video, -this.W, 0, this.W, this.H);
     this.rawCtx.restore();
 
-    // Sync into Mats
     const imgData = this.rawCtx.getImageData(0, 0, this.W, this.H);
     this.src.data.set(imgData.data);
 
-    // Convert RGBA -> BGR, apply optional brightness bias, then convert to HSV
     cv.cvtColor(this.src, this.bgr, cv.COLOR_RGBA2BGR);
-    if (this.brightnessOffset !== 0) {
-      this.bgr.convertTo(this.brightMat, -1, 1, this.brightnessOffset);
-    } else {
-      this.bgr.copyTo(this.brightMat);
-    }
-    cv.cvtColor(this.brightMat, this.hsv, cv.COLOR_BGR2HSV);
+    cv.cvtColor(this.bgr, this.hsv, cv.COLOR_BGR2HSV);
 
-    // Look for the "lens covered" signal: five probe pixels converging in HSV space.
-    const uniformSample = this.sampleUniformColor();
-    if (uniformSample) {
+    // Check for a uniform frame to register a new ball.
+    const uniform = this.sampleUniformColor();
+    if (uniform) {
       this.uniformStreak += 1;
-      this.uniformSample = uniformSample;
+      this.uniformSample = uniform;
     } else {
       this.uniformStreak = 0;
       this.uniformSample = null;
     }
 
-    // After 10 consistent frames, treat the sample as the calibration frame.
-    if (this.uniformSample && this.uniformStreak >= 10) {
-      this.setLockFromUniformSample(this.uniformSample);
+    if (this.uniformSample && this.uniformStreak >= UNIFORM_FRAMES_REQUIRED) {
+      this.registerBall(this.uniformSample);
       this.uniformStreak = 0;
       this.uniformSample = null;
     }
 
-    let result: SweepResult | null = null;
-    const paramsForMask = this.manualParams ?? this.lockedParams;
-    if (paramsForMask) {
-      result = this.applyParams(paramsForMask);
-    }
+    // Reset the display mask before we accumulate per-ball masks.
+    this.mask.setTo(new cv.Scalar(0));
 
-    if (result) {
-      const effectiveParams = this.manualParams ?? this.lockedParams!;
-      this.bestParams = { ...effectiveParams };
-      this.x = result.cx;
-      this.y = result.cy;
-      this.radius = result.radius;
-      result.mask.copyTo(this.mask);
-      if (this.adaptiveFramesRemaining > 0 && !this.manualDirty && this.lockedParams) {
-        this.updateHistoryFromMask(result.mask);
-        this.lockedParams = { ...this.refineParamsFromHistory(this.lockedParams) };
-        if (!this.manualDirty) {
-          this.manualParams = { ...this.lockedParams };
-          this.bestParams = { ...this.lockedParams };
+    this.primaryX = null;
+    this.primaryY = null;
+    this.primaryRadius = null;
+    this.primaryParams = null;
+
+    for (const ball of this.balls) {
+      const params = this.buildParams(ball.centerHue);
+      ball.params = params;
+      const result = this.evaluateBall(params);
+
+      if (result) {
+        ball.x = result.cx;
+        ball.y = result.cy;
+        ball.radius = result.radius;
+        ball.coverage = result.coverage;
+
+        if (this.primaryX === null) {
+          this.primaryX = result.cx;
+          this.primaryY = result.cy;
+          this.primaryRadius = result.radius;
+          this.primaryParams = { ...params };
         }
-        this.adaptiveFramesRemaining -= 1;
-      }
-    } else {
-      this.x = null;
-      this.y = null;
-      this.radius = null;
-      if (paramsForMask) {
-        this.bestParams = { ...paramsForMask };
       } else {
-        this.bestParams = null;
+        ball.x = null;
+        ball.y = null;
+        ball.radius = null;
+        ball.coverage = 0;
       }
-      this.mask.setTo(new cv.Scalar(0));
     }
 
+    // Push the accumulated mask to the Phaser texture.
     const show = new cv.Mat();
     cv.cvtColor(this.mask, show, cv.COLOR_GRAY2RGBA);
-    const outImgData = new ImageData(new Uint8ClampedArray(show.data), this.W, this.H);
-    this.maskCtx.putImageData(outImgData, 0, 0);
+    const outImg = new ImageData(new Uint8ClampedArray(show.data), this.W, this.H);
+    this.maskCtx.putImageData(outImg, 0, 0);
     show.delete();
 
-    this.processedFrames++;
+    this.processedFrames += 1;
     const windowElapsed = now - this.fpsWindowStart;
     if (windowElapsed >= 1000) {
       const fps = (this.processedFrames * 1000) / windowElapsed;
-      if (fps > 1 && fps < 20 && !this.lowFpsAlertShown) {
-        alert("OpenCV processing below 20 FPS " +  fps);
+      if (fps < 30 && !this.lowFpsAlertShown) {
+        console.warn("OpenCV processing below 30 FPS");
         this.lowFpsAlertShown = true;
       }
       this.processedFrames = 0;
@@ -261,11 +245,9 @@ export class VisionTuner {
     return true;
   }
 
-  private applyParams(params: SweepParams): SweepResult | null {
-    // Build a binary mask from the HSV limits and grade the best contour.
+  private evaluateBall(params: SweepParams): SweepResult | null {
     const low = new cv.Mat(this.H, this.W, this.hsv.type(), [params.hMin, params.sMin, params.vMin, 0]);
     const high = new cv.Mat(this.H, this.W, this.hsv.type(), [params.hMax, params.sMax, params.vMax, 255]);
-
     cv.inRange(this.hsv, low, high, this.tempMask);
     low.delete();
     high.delete();
@@ -274,11 +256,14 @@ export class VisionTuner {
     cv.dilate(this.tempMask, this.tempMask, this.kernel, new cv.Point(-1, -1), 1);
     cv.GaussianBlur(this.tempMask, this.tempMask, new cv.Size(7, 7), 0, 0);
 
+    // Accumulate into the display mask.
+    cv.bitwise_or(this.mask, this.tempMask, this.mask);
+
     this.tempMask.copyTo(this.workMask);
     cv.findContours(this.workMask, this.contours, this.hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
     let bestScore = 0;
-    let best: SweepResult | null = null;
+    let bestResult: SweepResult | null = null;
     const coverage = cv.countNonZero(this.tempMask) / (this.W * this.H);
 
     for (let i = 0; i < this.contours.size(); i++) {
@@ -303,45 +288,33 @@ export class VisionTuner {
         cnt.delete();
         continue;
       }
+
       const cx = moments.m10 / moments.m00;
       const cy = moments.m01 / moments.m00;
       const radius = Math.sqrt(area / Math.PI);
       const score = area * circularity;
       if (score > bestScore) {
-        this.tempMask.copyTo(this.bestMask);
+        bestResult = { score, cx, cy, radius, coverage };
         bestScore = score;
-        best = {
-          mask: this.bestMask,
-          params,
-          score,
-          cx,
-          cy,
-          radius,
-          coverage
-        };
       }
       cnt.delete();
     }
 
-    if (!best && coverage > 0) {
-      this.tempMask.copyTo(this.bestMask);
-      const estimatedRadius = Math.sqrt((coverage * this.W * this.H) / Math.PI);
-      best = {
-        mask: this.bestMask,
-        params,
+    if (!bestResult && coverage > 0.02) {
+      bestResult = {
         score: coverage,
         cx: this.W / 2,
         cy: this.H / 2,
-        radius: estimatedRadius,
+        radius: Math.sqrt((coverage * this.W * this.H) / Math.PI),
         coverage
       };
     }
 
-    return best;
+    return bestResult;
   }
 
   private sampleUniformColor(): [number, number, number] | null {
-    const points: Array<[number, number]> = [
+    const probes: Array<[number, number]> = [
       [Math.floor(this.W * 0.2), Math.floor(this.H * 0.2)],
       [Math.floor(this.W * 0.8), Math.floor(this.H * 0.2)],
       [Math.floor(this.W * 0.2), Math.floor(this.H * 0.8)],
@@ -350,10 +323,8 @@ export class VisionTuner {
     ];
 
     const samples: Array<[number, number, number]> = [];
-    for (const [px, py] of points) {
-      const x = this.clamp(Math.round(px), 0, this.W - 1);
-      const y = this.clamp(Math.round(py), 0, this.H - 1);
-      const ptr = this.hsv.ucharPtr(y, x);
+    for (const [px, py] of probes) {
+      const ptr = this.hsv.ucharPtr(this.clamp(py, 0, this.H - 1), this.clamp(px, 0, this.W - 1));
       if (!ptr) return null;
       samples.push([ptr[0], ptr[1], ptr[2]]);
     }
@@ -375,7 +346,6 @@ export class VisionTuner {
 
     const hTol = 6;
     const svTol = 8;
-
     for (const [h, s, v] of samples) {
       if (Math.abs(h - hAvg) > hTol) return null;
       if (Math.abs(s - sAvg) > svTol) return null;
@@ -385,241 +355,87 @@ export class VisionTuner {
     return [hAvg, sAvg, vAvg];
   }
 
-  private setLockFromUniformSample(sample: [number, number, number]) {
-    const params = this.buildParams(sample, 1.0);
-    const result = this.applyParams(params);
-    this.lockedParams = { ...params };
-    this.bestParams = { ...params };
-    this.mode = "locked";
-    this.adaptiveFramesRemaining = 10;
-    this.historyHue = [];
-    this.historySat = [];
-    this.historyVal = [];
-    if (!this.manualDirty) {
-      this.manualParams = { ...params };
+  private registerBall(sample: [number, number, number]) {
+    const [hAvg] = sample;
+
+    // If a ball with a close hue already exists, refresh it.
+    const existing = this.balls.find((b) => Math.abs(b.centerHue - hAvg) < 4);
+    if (existing) {
+      existing.centerHue = hAvg;
+      existing.params = this.buildParams(hAvg);
+      existing.coverage = 0;
+      existing.x = null;
+      existing.y = null;
+      existing.radius = null;
+      this.mode = "locked";
+      return;
     }
 
-    if (result) {
-      this.x = result.cx;
-      this.y = result.cy;
-      this.radius = result.radius;
-      result.mask.copyTo(this.mask);
-      this.updateHistoryFromMask(result.mask);
-    } else {
-      this.x = null;
-      this.y = null;
-      this.radius = null;
-      this.mask.setTo(new cv.Scalar(0));
-    }
-  }
-
-  public unlock() {
-    this.mode = "idle";
-    this.lockedParams = null;
-    this.bestParams = null;
-    this.historyHue = [];
-    this.historySat = [];
-    this.historyVal = [];
-    this.adaptiveFramesRemaining = 0;
-  }
-
-  public isLocked() {
-    return this.mode === "locked" && this.lockedParams !== null;
-  }
-
-  private buildParams(sample: [number, number, number], scale: number): SweepParams {
-    const [hAvg, sAvg, vAvg] = sample;
-    const hueBase = 16;
-    const satBaseLow = 60;
-    const satBaseHigh = 45;
-    const valBaseLow = 45;
-    const valBaseHigh = 45;
-
-    const params: SweepParams = {
-      hMin: this.clamp(Math.round(hAvg - hueBase * scale) - 10, 0, 179),
-      hMax: this.clamp(Math.round(hAvg + hueBase * scale), 0, 179),
-      sMin: this.clamp(Math.round(sAvg - satBaseLow * scale), 0, 255),
-      sMax: this.clamp(Math.round(sAvg + satBaseHigh * scale), 0, 255),
-      // Drop Vmin a touch so the ball stays in range once the camera brightens post-calibration.
-      vMin: this.clamp(Math.round(vAvg - valBaseLow * scale) - 10, 0, 255),
-      vMax: this.clamp(Math.round(vAvg + valBaseHigh * scale), 0, 255)
+    const ball: TrackedBall = {
+      id: this.nextBallId++,
+      centerHue: hAvg,
+      params: this.buildParams(hAvg),
+      x: null,
+      y: null,
+      radius: null,
+      coverage: 0
     };
 
-    if (params.hMax - params.hMin < 12) {
-      const mid = Math.round((params.hMax + params.hMin) / 2);
-      params.hMin = this.clamp(mid - 12, 0, 179);
-      params.hMax = this.clamp(mid + 12, 0, 179);
+    if (this.balls.length < MAX_BALLS) {
+      this.balls.push(ball);
+    } else {
+      // Replace the least reliable ball (lowest coverage).
+      let weakest = 0;
+      for (let i = 1; i < this.balls.length; i++) {
+        if (this.balls[i].coverage < this.balls[weakest].coverage) weakest = i;
+      }
+      this.balls[weakest] = ball;
     }
-    if (params.sMin < 40) params.sMin = 40;
-    if (params.vMin < 60) params.vMin = 60;
 
-    return params;
+    this.mode = "locked";
+  }
+
+  private buildParams(centerHue: number): SweepParams {
+    const tol = this.hueTolerance;
+    const hMin = this.clamp(Math.round(centerHue - tol), 0, 179);
+    const hMax = this.clamp(Math.round(centerHue + tol), 0, 179);
+    return {
+      hMin,
+      hMax,
+      sMin: SAT_RANGE[0],
+      sMax: SAT_RANGE[1],
+      vMin: VAL_RANGE[0],
+      vMax: VAL_RANGE[1]
+    };
+  }
+
+  public setHueTolerance(degrees: number) {
+    const clamped = this.clamp(Math.round(degrees), 4, 60);
+    if (clamped === this.hueTolerance) return;
+    this.hueTolerance = clamped;
+    for (const ball of this.balls) {
+      ball.params = this.buildParams(ball.centerHue);
+    }
+  }
+
+  public getHueTolerance() {
+    return this.hueTolerance;
+  }
+
+  public clearBalls() {
+    this.balls = [];
+    this.mode = "idle";
+    this.primaryX = null;
+    this.primaryY = null;
+    this.primaryRadius = null;
+    this.primaryParams = null;
+  }
+
+  public getTrackedBalls(): TrackedBall[] {
+    return this.balls.map((ball) => ({ ...ball, params: { ...ball.params } }));
   }
 
   private clamp(value: number, min: number, max: number) {
-    if (value < min) return min;
-    if (value > max) return max;
-    return value;
-  }
-
-  // Capture running HSV means from the current mask to smooth early post-lock frames.
-  private updateHistoryFromMask(mask: any) {
-    if (!mask) return;
-    const mean = new cv.Mat();
-    const std = new cv.Mat();
-    cv.meanStdDev(this.hsv, mean, std, mask);
-    const meanData = mean.data64F as Float64Array | undefined;
-    const meanVals = meanData ? Array.from(meanData) : [];
-    std.delete();
-    mean.delete();
-    if (meanVals.length < 3) return;
-    const [h, s, v] = meanVals;
-    this.historyHue.push(h);
-    this.historySat.push(s);
-    this.historyVal.push(v);
-    if (this.historyHue.length > this.historySize) this.historyHue.shift();
-    if (this.historySat.length > this.historySize) this.historySat.shift();
-    if (this.historyVal.length > this.historySize) this.historyVal.shift();
-  }
-
-  // Convert the history window into a slightly widened HSV band.
-  private refineParamsFromHistory(current: SweepParams): SweepParams {
-    if (!this.historyHue.length) return current;
-    const hMean = this.average(this.historyHue);
-    const sMean = this.average(this.historySat);
-    const vMean = this.average(this.historyVal);
-    const hStd = this.stddev(this.historyHue, hMean);
-    const sStd = this.stddev(this.historySat, sMean);
-    const vStd = this.stddev(this.historyVal, vMean);
-
-    const hTol = Math.max(8, hStd * 4);
-    const sTol = Math.max(40, sStd * 4);
-    const vTol = Math.max(40, vStd * 4);
-
-    return {
-      hMin: this.clamp(Math.round(hMean - hTol), 0, 179),
-      hMax: this.clamp(Math.round(hMean + hTol), 0, 179),
-      sMin: this.clamp(Math.round(sMean - sTol), 0, 255),
-      sMax: this.clamp(Math.round(sMean + sTol), 0, 255),
-      vMin: this.clamp(Math.round(vMean - vTol), 0, 255),
-      vMax: this.clamp(Math.round(vMean + vTol), 0, 255)
-    };
-  }
-
-  private average(values: number[]) {
-    return values.reduce((sum, v) => sum + v, 0) / values.length;
-  }
-
-  private stddev(values: number[], mean: number) {
-    if (values.length <= 1) return 0;
-    const variance = values.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / (values.length - 1);
-    return Math.sqrt(variance);
-  }
-
-  public setManualParam(key: keyof SweepParams, value: number) {
-    if (!this.manualParams) {
-      const base = this.lockedParams ? { ...this.lockedParams } : { hMin: 0, hMax: 179, sMin: 0, sMax: 255, vMin: 0, vMax: 255 };
-      this.manualParams = base;
-    }
-
-    const params = this.manualParams;
-    const val = Math.round(value);
-    switch (key) {
-      case "hMin":
-        params.hMin = this.clamp(val, 0, params.hMax);
-        if (params.hMin > params.hMax) params.hMax = params.hMin;
-        break;
-      case "hMax":
-        params.hMax = this.clamp(val, params.hMin, 179);
-        if (params.hMax < params.hMin) params.hMin = params.hMax;
-        break;
-      case "sMin":
-        params.sMin = this.clamp(val, 0, params.sMax);
-        if (params.sMin > params.sMax) params.sMax = params.sMin;
-        break;
-      case "sMax":
-        params.sMax = this.clamp(val, params.sMin, 255);
-        if (params.sMax < params.sMin) params.sMin = params.sMax;
-        break;
-      case "vMin":
-        params.vMin = this.clamp(val, 0, params.vMax);
-        if (params.vMin > params.vMax) params.vMax = params.vMin;
-        break;
-      case "vMax":
-        params.vMax = this.clamp(val, params.vMin, 255);
-        if (params.vMax < params.vMin) params.vMin = params.vMax;
-        break;
-    }
-
-    this.manualDirty = true;
-    this.bestParams = { ...params };
-    if (!this.lockedParams) {
-      this.mode = "locked";
-    }
-    this.adaptiveFramesRemaining = 0;
-  }
-
-  public setBrightness(value: number) {
-    const clamped = Math.max(-100, Math.min(100, Math.round(value)));
-    this.brightnessOffset = clamped;
-  }
-
-  public getBrightness() {
-    return this.brightnessOffset;
-  }
-
-  public getManualParams(): SweepParams | null {
-    return this.manualParams ? { ...this.manualParams } : null;
-  }
-
-  public isManualDirty() {
-    return this.manualDirty;
-  }
-
-  // Save current params to localStorage
-  private saveParamsToStorage() {
-    try {
-      const paramsToSave = this.manualParams || this.lockedParams;
-      if (paramsToSave) {
-        localStorage.setItem(SWEEP_PARAMS_STORAGE_KEY, JSON.stringify(paramsToSave));
-      }
-    } catch (e) {
-      console.error("Failed to save params to localStorage:", e);
-    }
-  }
-
-  // Start autosave interval (every 1 second)
-  private startAutoSave() {
-    // // Set up a new interval to save every 1 second
-    // this.autoSaveIntervalId = window.setInterval(() => {
-    //   this.saveParamsToStorage();
-    // }, 1000);
-  }
-
-  // Load params from localStorage
-  private loadSavedParams() {
-    try {
-      const savedParamsJson = localStorage.getItem(SWEEP_PARAMS_STORAGE_KEY);
-      if (savedParamsJson) {
-        const params = JSON.parse(savedParamsJson) as SweepParams;
-        // Validate the structure
-        if (
-          typeof params.hMin === 'number' &&
-          typeof params.hMax === 'number' &&
-          typeof params.sMin === 'number' &&
-          typeof params.sMax === 'number' &&
-          typeof params.vMin === 'number' &&
-          typeof params.vMax === 'number'
-        ) {
-          this.manualParams = params;
-          this.lockedParams = { ...params };
-          this.bestParams = { ...params };
-          this.mode = "locked";
-          console.log("Loaded saved params from localStorage");
-        }
-      }
-    } catch (e) {
-      console.error("Failed to load params from localStorage:", e);
-    }
+    return Math.min(max, Math.max(min, value));
   }
 }

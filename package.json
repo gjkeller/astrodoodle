@@ -4,6 +4,7 @@
     "version": "1.0.0",
     "scripts": {
         "dev": "vite --config vite/config.dev.mjs",
+        "start": "npm run dev",
         "build": "vite build --config vite/config.prod.mjs && phaser-asset-pack-hashing -j -r dist",
         "preview": "vite preview"
     },
