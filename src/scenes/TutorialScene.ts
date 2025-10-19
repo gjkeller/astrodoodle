@@ -151,7 +151,7 @@ export default class TutorialScene extends Phaser.Scene {
     
     // Add Anshul image on the second slide (index 1) - positioned to the right
     if (index === 1) {
-      const anshulImage = this.add.image(350, 0, 'anshul');
+      const anshulImage = this.add.image(350, 200, 'anshul');
       anshulImage.setScale(0.4); // Slightly larger for better visibility
       this.slideContainer.add(anshulImage);
     }
