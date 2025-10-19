@@ -589,10 +589,10 @@ export class VisionTuner {
 
   // Start autosave interval (every 1 second)
   private startAutoSave() {
-    // Set up a new interval to save every 1 second
-    this.autoSaveIntervalId = window.setInterval(() => {
-      this.saveParamsToStorage();
-    }, 1000);
+    // // Set up a new interval to save every 1 second
+    // this.autoSaveIntervalId = window.setInterval(() => {
+    //   this.saveParamsToStorage();
+    // }, 1000);
   }
 
   // Load params from localStorage
