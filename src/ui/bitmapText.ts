@@ -166,14 +166,16 @@ export class BitmapTextHelper {
     x: number,
     y: number,
     text: string,
-    tint: number = GAME_SETTINGS.COLORS.WHITE
+    tint: number = GAME_SETTINGS.COLORS.WHITE,
+    size: number = 16
   ): Phaser.GameObjects.Text | Phaser.GameObjects.BitmapText {
     return this.createBitmapText(scene, x, y, text, {
-      size: 16,
+      size: size,
       tint,
       align: 'center'
     });
   }
+ 
   
   static createButtonText(
     scene: Phaser.Scene,

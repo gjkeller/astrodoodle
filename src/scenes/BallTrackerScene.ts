@@ -1,6 +1,36 @@
 import { VisionTuner } from "../tracking";
-import type { TrackedBall } from "../tracking";
+import type { SweepParams, TrackedBall } from "../tracking";
 import { addPoint } from "../gesture/tracker";
+
+type SliderKey = Exclude<keyof SweepParams, "wrapHue">;
+
+type SliderSpec = {
+  key: SliderKey;
+  label: string;
+  min: number;
+  max: number;
+  step: number;
+};
+
+type BallControl = {
+  container: HTMLElement;
+  title: HTMLElement;
+  position: HTMLElement;
+  hue: HTMLElement;
+  hsvSummary: HTMLElement;
+  sliders: Record<SliderKey, HTMLInputElement>;
+  valueLabels: Record<SliderKey, HTMLElement>;
+  suspendEvents: boolean;
+};
+
+const SLIDER_SPECS: SliderSpec[] = [
+  { key: "hMin", label: "Hue Min", min: 0, max: 179, step: 1 },
+  { key: "hMax", label: "Hue Max", min: 0, max: 179, step: 1 },
+  { key: "sMin", label: "Sat Min", min: 0, max: 255, step: 1 },
+  { key: "sMax", label: "Sat Max", min: 0, max: 255, step: 1 },
+  { key: "vMin", label: "Val Min", min: 0, max: 255, step: 1 },
+  { key: "vMax", label: "Val Max", min: 0, max: 255, step: 1 }
+];
 
 export default class BallTrackerScene extends Phaser.Scene {
   private vis!: VisionTuner;
@@ -14,12 +44,15 @@ export default class BallTrackerScene extends Phaser.Scene {
   private domPos?: HTMLElement;
   private domParams?: HTMLElement;
   private domBallList?: HTMLElement;
+  private addManualBtn?: HTMLButtonElement;
   private hueTolSlider?: HTMLInputElement;
   private hueTolValue?: HTMLElement;
   private clearBtn?: HTMLButtonElement;
   private cameraStarted = false;
   private frameCount = 0;
   private lastFpsCheck = performance.now();
+  private latestBalls: TrackedBall[] = [];
+  private ballControls = new Map<number, BallControl>();
 
   constructor() {
     super("BallTracker");
@@ -60,6 +93,7 @@ export default class BallTrackerScene extends Phaser.Scene {
     this.hueTolSlider = document.getElementById("slider-hTol") as HTMLInputElement | null ?? undefined;
     this.hueTolValue = document.getElementById("value-hTol") ?? undefined;
     this.clearBtn = document.getElementById("clearBtn") as HTMLButtonElement | null ?? undefined;
+    this.addManualBtn = document.getElementById("addManualBallBtn") as HTMLButtonElement | null ?? undefined;
 
     const startBtn = document.getElementById("startBtn") as HTMLButtonElement | null;
     if (startBtn) {
@@ -107,9 +141,19 @@ export default class BallTrackerScene extends Phaser.Scene {
       this.renderBallList([]);
       if (this.domParams) this.domParams.textContent = "–";
       if (this.domPos) this.domPos.textContent = "–, –";
+      this.latestBalls = [];
     });
 
-    this.renderBallList(this.vis.getTrackedBalls());
+    this.addManualBtn?.addEventListener("click", () => {
+      const defaults = this.buildDefaultManualParams();
+      this.vis.addManualBall(defaults);
+      this.latestBalls = this.vis.getTrackedBalls();
+      this.renderBallList(this.latestBalls);
+    });
+
+    const initialBalls = this.vis.getTrackedBalls();
+    this.latestBalls = initialBalls;
+    this.renderBallList(initialBalls);
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.cleanup());
   }
@@ -168,9 +212,11 @@ export default class BallTrackerScene extends Phaser.Scene {
       <div id="ballList" style="margin-bottom:12px;padding:10px 12px;border-radius:12px;border:1px solid rgba(255,255,255,0.06);background:rgba(255,255,255,0.05);font-size:13px;line-height:1.5;color:#dbe6ff;">No balls registered</div>
       <button id="startBtn" style="width:100%;padding:10px 14px;margin-top:6px;border:none;border-radius:10px;background:linear-gradient(135deg,#2f7bff,#58c6ff);color:#fff;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;transition:transform 0.2s ease, opacity 0.2s ease;">Start Camera</button>
       <button id="clearBtn" style="width:100%;padding:10px 14px;margin-top:6px;border:none;border-radius:10px;background:rgba(255,82,82,0.9);color:#fff;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;transition:transform 0.2s ease, opacity 0.2s ease;">Clear Balls</button>
+      <button id="addManualBallBtn" style="width:100%;padding:10px 14px;margin-top:6px;border:none;border-radius:10px;background:rgba(88,198,255,0.9);color:#09121f;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;transition:transform 0.2s ease, opacity 0.2s ease;">Add Manual Ball</button>
     `;
 
     document.body.appendChild(container);
+
   }
 
   // No longer needed as we're using an HTML back button
@@ -197,6 +243,7 @@ export default class BallTrackerScene extends Phaser.Scene {
     }
 
     const balls = this.vis.getTrackedBalls();
+    this.latestBalls = balls;
     this.renderBallList(balls);
 
     const rawTex = this.textures.get("raw") as Phaser.Textures.CanvasTexture;
@@ -251,15 +298,231 @@ export default class BallTrackerScene extends Phaser.Scene {
 
   private renderBallList(balls: TrackedBall[]) {
     if (!this.domBallList) return;
+
     if (!balls.length) {
       this.domBallList.innerHTML = "No balls registered";
+      this.ballControls.forEach((control) => control.container.remove());
+      this.ballControls.clear();
       return;
     }
-    this.domBallList.innerHTML = balls.map((ball, idx) => {
-      const pos = ball.x !== null && ball.y !== null
-        ? `${Math.round(ball.x)}, ${Math.round(ball.y)}`
-        : "not visible";
-      return `Ball ${idx + 1}: ${pos} (H≈${Math.round(ball.centerHue)}°)`;
-    }).join("<br>");
+
+    if (!this.ballControls.size) {
+      this.domBallList.innerHTML = "";
+    }
+
+    const presentIds = new Set<number>();
+    balls.forEach((ball, idx) => {
+      presentIds.add(ball.id);
+      let control = this.ballControls.get(ball.id);
+      if (!control) {
+        control = this.createBallControl(ball.id);
+        this.ballControls.set(ball.id, control);
+        this.domBallList!.appendChild(control.container);
+      }
+      this.updateBallControl(control, ball, idx);
+    });
+
+    for (const id of Array.from(this.ballControls.keys())) {
+      if (!presentIds.has(id)) {
+        const control = this.ballControls.get(id);
+        if (control) control.container.remove();
+        this.ballControls.delete(id);
+      }
+    }
+  }
+
+  private createBallControl(ballId: number): BallControl {
+    const container = document.createElement("div");
+    Object.assign(container.style, <Partial<CSSStyleDeclaration>>{
+      padding: "10px 12px",
+      marginBottom: "10px",
+      borderRadius: "12px",
+      border: "1px solid rgba(255,255,255,0.08)",
+      background: "rgba(255,255,255,0.06)",
+      color: "#e6f0ff",
+      fontSize: "12px",
+      lineHeight: "1.4"
+    });
+
+    const title = document.createElement("div");
+    title.style.fontSize = "13px";
+    title.style.fontWeight = "600";
+    title.style.letterSpacing = "0.06em";
+    title.style.textTransform = "uppercase";
+    title.style.color = "#8bd9ff";
+
+    const position = document.createElement("div");
+    const hue = document.createElement("div");
+    const hsvSummary = document.createElement("div");
+
+    const header = document.createElement("div");
+    header.appendChild(title);
+    header.appendChild(position);
+    header.appendChild(hue);
+    header.appendChild(hsvSummary);
+    container.appendChild(header);
+
+    const slidersWrap = document.createElement("div");
+    slidersWrap.style.display = "grid";
+    slidersWrap.style.gap = "10px";
+    slidersWrap.style.marginTop = "10px";
+    container.appendChild(slidersWrap);
+
+    const sliders = {} as Record<SliderKey, HTMLInputElement>;
+    const valueLabels = {} as Record<SliderKey, HTMLElement>;
+    const control: BallControl = {
+      container,
+      title,
+      position,
+      hue,
+      hsvSummary,
+      sliders,
+      valueLabels,
+      suspendEvents: false
+    };
+
+    SLIDER_SPECS.forEach((spec) => {
+      const wrapper = document.createElement("div");
+      wrapper.style.display = "flex";
+      wrapper.style.flexDirection = "column";
+
+      const labelRow = document.createElement("div");
+      labelRow.style.display = "flex";
+      labelRow.style.justifyContent = "space-between";
+      labelRow.style.alignItems = "center";
+
+      const label = document.createElement("span");
+      label.style.fontSize = "11px";
+      label.style.letterSpacing = "0.05em";
+      label.style.textTransform = "uppercase";
+      label.style.color = "#9bb4ff";
+      label.textContent = spec.label;
+
+      const value = document.createElement("span");
+      value.style.fontVariantNumeric = "tabular-nums";
+      value.style.fontSize = "12px";
+      value.style.color = "#f5fbff";
+      value.textContent = "0";
+
+      labelRow.appendChild(label);
+      labelRow.appendChild(value);
+
+      const slider = document.createElement("input");
+      slider.type = "range";
+      slider.min = String(spec.min);
+      slider.max = String(spec.max);
+      slider.step = String(spec.step);
+      slider.value = String(spec.min);
+      slider.style.width = "100%";
+      slider.style.marginTop = "4px";
+
+      slider.addEventListener("input", () => this.handleSliderInput(ballId, control, spec.key));
+      wrapper.appendChild(labelRow);
+      wrapper.appendChild(slider);
+      slidersWrap.appendChild(wrapper);
+
+      sliders[spec.key] = slider;
+      valueLabels[spec.key] = value;
+    });
+
+    return control;
+  }
+
+  private updateBallControl(control: BallControl, ball: TrackedBall, index: number) {
+    control.title.textContent = `Ball ${index + 1}`;
+    const pos =
+      ball.x !== null && ball.y !== null
+        ? `Position: ${Math.round(ball.x)}, ${Math.round(ball.y)}`
+        : "Position: not visible";
+    control.position.textContent = pos;
+    const hueLabel = `Hue ≈ ${Math.round(ball.centerHue)}°${ball.params.wrapHue ? " (wrap)" : ""}`;
+    control.hue.textContent = hueLabel;
+    control.hsvSummary.textContent = this.formatHSVSummary(ball.params);
+    this.applyParamsToSliders(control, ball.params);
+  }
+
+  private applyParamsToSliders(control: BallControl, params: SweepParams) {
+    control.suspendEvents = true;
+    SLIDER_SPECS.forEach((spec) => {
+      const slider = control.sliders[spec.key];
+      const value = params[spec.key];
+      if (Number(slider.value) !== value) {
+        slider.value = String(value);
+      }
+      control.valueLabels[spec.key].textContent = String(value);
+    });
+    control.suspendEvents = false;
+  }
+
+  private collectSliderParams(control: BallControl): SweepParams {
+    const result: Partial<SweepParams> = {};
+    SLIDER_SPECS.forEach((spec) => {
+      result[spec.key] = Number(control.sliders[spec.key].value);
+    });
+    if (typeof result.hMin === "number" && typeof result.hMax === "number") {
+      result.wrapHue = result.hMin > result.hMax;
+    }
+    return result as SweepParams;
+  }
+
+  private handleSliderInput(ballId: number, control: BallControl, changedKey: SliderKey) {
+    if (control.suspendEvents) return;
+
+    const params = this.collectSliderParams(control);
+
+    const wrapHue = params.hMin > params.hMax;
+
+    if (changedKey === "sMin" || changedKey === "sMax") {
+      if (params.sMin > params.sMax) {
+        if (changedKey === "sMin") {
+          params.sMax = params.sMin;
+        } else {
+          params.sMin = params.sMax;
+        }
+      }
+    }
+
+    if (changedKey === "vMin" || changedKey === "vMax") {
+      if (params.vMin > params.vMax) {
+        if (changedKey === "vMin") {
+          params.vMax = params.vMin;
+        } else {
+          params.vMin = params.vMax;
+        }
+      }
+    }
+
+    params.wrapHue = wrapHue;
+
+    const updated = this.vis.updateManualBall(ballId, params);
+    const effective = updated ? updated.params : params;
+    this.applyParamsToSliders(control, effective);
+    control.hsvSummary.textContent = this.formatHSVSummary(effective);
+    this.latestBalls = this.vis.getTrackedBalls();
+  }
+
+  private formatHSVSummary(params: SweepParams) {
+    if (params.wrapHue && params.hMin > params.hMax) {
+      return `HSV: H[${params.hMin}-179] ∪ [0-${params.hMax}] S[${params.sMin}-${params.sMax}] V[${params.vMin}-${params.vMax}]`;
+    }
+    return `HSV: H[${params.hMin}-${params.hMax}] S[${params.sMin}-${params.sMax}] V[${params.vMin}-${params.vMax}]`;
+  }
+
+  private buildDefaultManualParams(): SweepParams {
+    if (this.vis.primaryParams) {
+      return { ...this.vis.primaryParams };
+    }
+    if (this.latestBalls.length) {
+      return { ...this.latestBalls[0].params };
+    }
+    return {
+      hMin: 0,
+      hMax: 179,
+      sMin: 120,
+      sMax: 255,
+      vMin: 120,
+      vMax: 255,
+      wrapHue: false
+    };
   }
 }

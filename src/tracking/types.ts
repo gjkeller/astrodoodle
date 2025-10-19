@@ -7,6 +7,7 @@ export type SweepParams = {
   sMax: number;
   vMin: number;
   vMax: number;
+  wrapHue?: boolean;
 };
 
 export type TrackedBall = {

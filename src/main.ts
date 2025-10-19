@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import BootScene from "./scenes/BootScene";
 import MenuScene from "./scenes/MenuScene";
 import SelectPlayersScene from "./scenes/SelectPlayersScene";
+import TutorialScene from "./scenes/TutorialScene";
 import PlayingGameScene from "./scenes/PlayingGameScene";
 import LeaderboardScene from "./scenes/LeaderboardScene";
 import NameEntryScene from "./scenes/NameEntryScene";
@@ -46,7 +47,7 @@ window.addEventListener('load', function () {
 			mode: Phaser.Scale.ScaleModes.FIT,
 			autoCenter: Phaser.Scale.Center.CENTER_BOTH
 		},
-		scene: [BootScene, MenuScene, SelectPlayersScene, PlayingGameScene, LeaderboardScene, NameEntryScene, SettingsScene, BallTrackerScene, VisualizerTestScene, WandCalibrationScene]
+		scene: [BootScene, MenuScene, SelectPlayersScene, TutorialScene, PlayingGameScene, LeaderboardScene, NameEntryScene, SettingsScene, BallTrackerScene, VisualizerTestScene, WandCalibrationScene]
 	});
 
 

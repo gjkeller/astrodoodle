@@ -69,11 +69,31 @@ export class BallTrackerEngine {
   }
 
   private evaluateBall(hsvMat: any, params: SweepParams): SweepResult | null {
-    const low = new cv.Mat(this.height, this.width, hsvMat.type(), [params.hMin, params.sMin, params.vMin, 0]);
-    const high = new cv.Mat(this.height, this.width, hsvMat.type(), [params.hMax, params.sMax, params.vMax, 255]);
-    cv.inRange(hsvMat, low, high, this.tempMask);
-    low.delete();
-    high.delete();
+    this.tempMask.setTo(new cv.Scalar(0));
+
+    if (params.wrapHue && params.hMin > params.hMax) {
+      const highRangeLow = new cv.Mat(this.height, this.width, hsvMat.type(), [params.hMin, params.sMin, params.vMin, 0]);
+      const highRangeHigh = new cv.Mat(this.height, this.width, hsvMat.type(), [179, params.sMax, params.vMax, 255]);
+      const lowRangeLow = new cv.Mat(this.height, this.width, hsvMat.type(), [0, params.sMin, params.vMin, 0]);
+      const lowRangeHigh = new cv.Mat(this.height, this.width, hsvMat.type(), [params.hMax, params.sMax, params.vMax, 255]);
+
+      const wrapMask = new cv.Mat(this.height, this.width, cv.CV_8UC1);
+      cv.inRange(hsvMat, highRangeLow, highRangeHigh, this.tempMask);
+      cv.inRange(hsvMat, lowRangeLow, lowRangeHigh, wrapMask);
+      cv.bitwise_or(this.tempMask, wrapMask, this.tempMask);
+
+      highRangeLow.delete();
+      highRangeHigh.delete();
+      lowRangeLow.delete();
+      lowRangeHigh.delete();
+      wrapMask.delete();
+    } else {
+      const low = new cv.Mat(this.height, this.width, hsvMat.type(), [params.hMin, params.sMin, params.vMin, 0]);
+      const high = new cv.Mat(this.height, this.width, hsvMat.type(), [params.hMax, params.sMax, params.vMax, 255]);
+      cv.inRange(hsvMat, low, high, this.tempMask);
+      low.delete();
+      high.delete();
+    }
 
     cv.morphologyEx(this.tempMask, this.tempMask, cv.MORPH_OPEN, this.kernel, new cv.Point(-1, -1), 1);
     cv.dilate(this.tempMask, this.tempMask, this.kernel, new cv.Point(-1, -1), 1);
