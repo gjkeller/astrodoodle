@@ -1,6 +1,7 @@
 import { BitmapTextHelper } from '../ui/bitmapText';
 import { ProgressBar, Minimap } from '../ui';
 import { Asteroid } from '../gameplay';
+import { Missile } from '../gameplay/missile';
 import { gameStore, eventBus } from '../core';
 import { GAME_SETTINGS, msToTicks } from '../core/settings';
 import type { PlayerId } from '../types/global';
@@ -13,6 +14,7 @@ export default class PlayingGameScene extends Phaser.Scene {
   private backgroundTargetY2: number = 0;
   private progressBar: ProgressBar;
   private asteroids: Asteroid[] = [];
+  private missiles: Missile[] = [];
   private staticShip: Phaser.GameObjects.Image;
   private minimap: Minimap;
   private fpsText: Phaser.GameObjects.Text | null = null;
@@ -42,6 +44,9 @@ export default class PlayingGameScene extends Phaser.Scene {
   }
   
   create(): void {
+    // Create explosion animation
+    this.createExplosionAnimation();
+    
     this.createBackground();
     this.createProgressBar();
     this.createStaticShip();
@@ -151,8 +156,12 @@ export default class PlayingGameScene extends Phaser.Scene {
     // Enable physics body for collision detection
     this.physics.world.enable(this.staticShip);
     const shipBody = this.staticShip.body as Phaser.Physics.Arcade.Body;
-    shipBody.setSize(80, 80); // Set collision box size
-    shipBody.setOffset(-40, -40); // Center the collision box
+
+    // Ship is triangular, roughly 70px wide and 90px tall at 0.8 scale
+    // Use a smaller collision box that fits the ship body better
+    // Account for the 0.8 scale: 70*0.8=56, 90*0.8=72
+    shipBody.setSize(56, 72); // Width: 70*0.8, Height: 90*0.8
+    shipBody.setOffset(-28, -36); // Center the collision box (half of width and height)
     shipBody.setImmovable(true); // Ship doesn't move
   }
   
@@ -214,6 +223,17 @@ export default class PlayingGameScene extends Phaser.Scene {
     });
     this.fpsText.setDepth(200);
   }
+  
+  private createExplosionAnimation(): void {
+    // Create explosion animation from sprite sheet (12 frames)
+    this.anims.create({
+      key: 'explosion',
+      frames: this.anims.generateFrameNumbers('explosion', { start: 0, end: 11 }),
+      frameRate: 20, // 20 FPS for smooth animation
+      repeat: 0 // Play once and stop
+    });
+  }
+  
   
   private startCountdown(): void {
     // Create countdown text overlay
@@ -379,6 +399,9 @@ export default class PlayingGameScene extends Phaser.Scene {
     // Update asteroids (always continue until game ends)
     this.updateAsteroids();
     
+    // Update missiles
+    this.updateMissiles();
+    
     // Update background scroll
     this.updateBackgroundScroll();
     
@@ -475,14 +498,20 @@ export default class PlayingGameScene extends Phaser.Scene {
         asteroid.setVelocity(velocityX, velocityY);
       }
       
-      // Check for collision with ship using manual distance check (more reliable)
+      // Check for collision with ship using manual distance check
+      // Collision should happen when asteroid edge touches ship edge
+      // Ship radius (diagonal): ~45px, Asteroid radius: varies by scale (40 * scale)
+      const asteroidRadius = 40 * asteroid.sprite.scaleX;
+      const shipRadius = 45; // Approximate diagonal of ship collision box
+      const collisionThreshold = asteroidRadius + shipRadius;
+
       const currentDistance = Math.sqrt(
         Math.pow(asteroidX - shipX, 2) + Math.pow(asteroidY - shipY, 2)
       );
       
-      if (currentDistance < 50) { // Collision radius
-        // Asteroid hit the ship - remove it and reset multiplier
-        asteroid.destroy();
+      if (currentDistance < collisionThreshold) { // Dynamic collision radius
+        // Asteroid hit the ship - delete with explosion
+        asteroid.delete();
         this.asteroids.splice(i, 1);
         gameStore.onAsteroidHit(0); // Reset consecutive asteroids and multiplier to 1
         this.updateMultiplierDisplay();
@@ -495,6 +524,48 @@ export default class PlayingGameScene extends Phaser.Scene {
           asteroidX > GAME_SETTINGS.CANVAS_WIDTH + 100) {
         asteroid.destroy();
         this.asteroids.splice(i, 1);
+      }
+    }
+  }
+  
+  private updateMissiles(): void {
+    for (let i = this.missiles.length - 1; i >= 0; i--) {
+      const missile = this.missiles[i];
+      
+      // Update missile
+      missile.update();
+      
+      // Check collision with target asteroid
+      const targetAsteroid = missile.getTargetAsteroid();
+      if (targetAsteroid && targetAsteroid.body) {
+        const distance = Math.sqrt(
+          Math.pow(missile.x - targetAsteroid.x, 2) + 
+          Math.pow(missile.y - targetAsteroid.y, 2)
+        );
+        
+        if (distance < 30) { // Collision radius
+          // Calculate impact point on asteroid edge
+          const asteroidRadius = 40 * targetAsteroid.sprite.scaleX;
+          const impactX = targetAsteroid.x + (missile.x - targetAsteroid.x) * (asteroidRadius / distance);
+          const impactY = targetAsteroid.y + (missile.y - targetAsteroid.y) * (asteroidRadius / distance);
+          
+          // Missile hit asteroid - handle impact at edge point
+          const shouldDestroy = targetAsteroid.handleMissileImpact(impactX, impactY);
+          missile.destroy();
+          this.missiles.splice(i, 1);
+          
+          // If asteroid should be destroyed, remove it from the array
+          if (shouldDestroy) {
+            const asteroidIndex = this.asteroids.indexOf(targetAsteroid);
+            if (asteroidIndex > -1) {
+              this.asteroids.splice(asteroidIndex, 1);
+            }
+          }
+        }
+      } else {
+        // Target asteroid no longer exists, destroy missile
+        missile.destroy();
+        this.missiles.splice(i, 1);
       }
     }
   }
@@ -525,10 +596,19 @@ export default class PlayingGameScene extends Phaser.Scene {
     // Find the closest asteroid that can accept this key
     const nearestAsteroid = this.findNearestValidAsteroid(key);
     if (nearestAsteroid) {
+      // Check if this will be the final key before processing
       const success = nearestAsteroid.processKeyPress(key);
+      console.log(`Key ${key} pressed, success: ${success}, currentIndex: ${nearestAsteroid.currentIndex}, sequenceLength: ${nearestAsteroid.getSequenceLength()}`);
       if (success) {
-        // Award points and update streak
-        this.handleCorrectKeyPress(nearestAsteroid);
+        // Shoot missile for every successful key press
+        console.log(`Shooting missile for key ${key}`);
+        this.shootMissileAtAsteroidDelayed(nearestAsteroid);
+        
+        // Check if sequence is now complete
+        if (nearestAsteroid.isComplete()) {
+          // Award points and update streak for completion
+          this.handleCorrectKeyPress(nearestAsteroid);
+        }
       } else {
         // Brief negative feedback
         this.handleIncorrectKeyPress();
@@ -577,12 +657,68 @@ export default class PlayingGameScene extends Phaser.Scene {
     this.updateScoreDisplay();
     this.updateMultiplierDisplay();
     
-    // Remove the completed asteroid
-    const index = this.asteroids.indexOf(asteroid);
-    if (index > -1) {
-      this.asteroids.splice(index, 1);
-      asteroid.destroy();
+    // Don't remove asteroid from array here - let the missile collision handle it
+    // The asteroid will be removed when the final missile hits it
+  }
+  
+  private shootMissileAtAsteroidDelayed(asteroid: Asteroid): void {
+    // Calculate rotation angle to asteroid
+    const rotationAngle = this.calculateRotationToAsteroid(asteroid);
+    
+    // Make ship face the asteroid with smooth tweening
+    this.makeShipFaceAsteroid(rotationAngle);
+    
+    // Wait for ship rotation to complete, then shoot missile
+    this.time.delayedCall(100, () => { // 100ms matches the tween duration
+      this.shootMissileAtAsteroid(asteroid, rotationAngle);
+    });
+  }
+
+  private shootMissileAtAsteroid(asteroid: Asteroid, rotationAngle?: number): void {
+    // Calculate rotation angle to asteroid if not provided
+    if (rotationAngle === undefined) {
+      rotationAngle = this.calculateRotationToAsteroid(asteroid);
     }
+    
+    // Calculate missile spawn position (center/head of the ship)
+    const shipX = this.staticShip.x;
+    const shipY = this.staticShip.y;
+    
+    // Try spawning from the ship's center first to debug positioning
+    const centerX = shipX;
+    const centerY = shipY;
+    
+    console.log(`Ship position: (${shipX}, ${shipY}), Missile spawn: (${centerX}, ${centerY}), Rotation: ${rotationAngle}`);
+    
+    // Create missile with the calculated rotation
+    const missile: Missile = new Missile(this, centerX, centerY, asteroid, rotationAngle);
+    this.missiles.push(missile);
+  }
+  
+  private calculateRotationToAsteroid(asteroid: Asteroid): number {
+    // Aim at the center of the asteroid sprite, not the physics body
+    const asteroidX = asteroid.x;
+    const asteroidY = asteroid.y;
+    const shipX = this.staticShip.x;
+    const shipY = this.staticShip.y;
+    
+    // Calculate angle to asteroid center
+    const angle = Math.atan2(asteroidY - shipY, asteroidX - shipX);
+    
+    // Adjust angle by 90 degrees (π/2 radians) to fix ship orientation
+    const adjustedAngle = angle + Math.PI / 2;
+    
+    return adjustedAngle;
+  }
+  
+  private makeShipFaceAsteroid(targetRotation: number): void {
+    // Tween ship rotation to target angle with high speed
+    this.tweens.add({
+      targets: this.staticShip,
+      rotation: targetRotation,
+      duration: 100, // 100ms for faster rotation
+      ease: 'Power2.easeOut'
+    });
   }
   
   private updateScoreDisplay(): void {

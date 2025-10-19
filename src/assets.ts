@@ -9,6 +9,8 @@ import cursor from './assets/cursor.png';
 import orangeShip from './assets/orange-ship.png';
 import purpleShip from './assets/purple-ship.png';
 import meteor1 from './assets/meteor1.png';
+import explosion from './assets/explosion.png';
+import missile from './assets/missile.png';
 
 // Progress bar assets
 import barGrayRoundOutlineSmallL from './assets/bar_gray_round_outline_small_l.png';
@@ -29,6 +31,8 @@ export const ASSETS = {
   orangeShip,
   purpleShip,
   meteor1,
+  explosion,
+  missile,
   // Progress bar assets
   barGrayRoundOutlineSmallL,
   barGrayRoundOutlineSmallM,

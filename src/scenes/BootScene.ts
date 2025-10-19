@@ -20,6 +20,8 @@ export default class BootScene extends Phaser.Scene {
     this.load.image('orange-ship', ASSETS.orangeShip);
     this.load.image('purple-ship', ASSETS.purpleShip);
     this.load.image('meteor1', ASSETS.meteor1);
+    this.load.spritesheet('explosion', ASSETS.explosion, { frameWidth: 96, frameHeight: 96 });
+    this.load.image('missile', ASSETS.missile);
     
     // Load progress bar assets
     this.load.image('bar-gray-round-outline-small-l', ASSETS.barGrayRoundOutlineSmallL);

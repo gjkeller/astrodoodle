@@ -5,10 +5,11 @@ export class Asteroid extends Phaser.GameObjects.Container {
   private characterTexts: Phaser.GameObjects.Text[] = [];
   private side: PlayerSide;
   private sequence: string;
-  private currentIndex: number = 0;
+  public currentIndex: number = 0;
   private consumedKeys: boolean[] = [];
   private sequenceLength: number;
   public body: Phaser.Physics.Arcade.Body;
+  private missileHits: number = 0; // Track how many missiles have hit this asteroid
   
   constructor(
     scene: Phaser.Scene,
@@ -46,8 +47,11 @@ export class Asteroid extends Phaser.GameObjects.Container {
     // Enable physics body for smooth movement on the container
     this.scene.physics.world.enable(this);
     this.body = this.body as Phaser.Physics.Arcade.Body;
-    this.body.setSize(80, 80); // Set collision box size
-    this.body.setOffset(-40, -40); // Center the collision box
+
+    // Use circular body that scales with the asteroid
+    // Base radius is 40 pixels, scaled by asteroid scale
+    const radius = 40 * scale;
+    this.body.setCircle(radius, 0, 0); // setCircle(radius, offsetX, offsetY) - centered
     
     // Debug logging
     console.log(`Created asteroid at (${x}, ${y}) with sequence: ${sequence}, length: ${this.sequenceLength}, scale: ${scale}, rotation: ${randomRotation.toFixed(2)}`);
@@ -74,8 +78,8 @@ export class Asteroid extends Phaser.GameObjects.Container {
     // Update the display to show consumed keys as grayed out
     this.updateDisplay();
     
-    // Return true if sequence is complete
-    return this.currentIndex >= this.sequenceLength;
+    // Return true for successful keypress
+    return true;
   }
   
   private calculateScale(sequenceLength: number): number {
@@ -158,5 +162,80 @@ export class Asteroid extends Phaser.GameObjects.Container {
   
   getPhysicsBody(): Phaser.Physics.Arcade.Body {
     return this.body;
+  }
+  
+  // Create explosion animation when asteroid is destroyed
+  createExplosion(): void {
+    // Get the asteroid's position and scale
+    const x = this.getPhysicsX();
+    const y = this.getPhysicsY();
+    const scale = this.sprite.scaleX;
+    
+    // Create explosion sprite
+    const explosion = this.scene.add.sprite(x, y, 'explosion');
+    
+    // Scale explosion to be larger than the asteroid for better visual effect
+    // Base explosion size is 64x64, so scale it appropriately
+    const explosionScale = scale; // Make explosion 2x larger than asteroid
+    
+    // Set the scale using setDisplaySize to avoid clipping issues
+    explosion.setDisplaySize(96 * explosionScale, 96 * explosionScale);
+    
+    // Set depth to be above asteroids but below UI
+    explosion.setDepth(160);
+    
+    // Play animation and destroy when complete
+    explosion.play('explosion');
+    explosion.on('animationcomplete', () => {
+      explosion.destroy();
+    });
+  }
+  
+  // Handle missile impact - returns true if asteroid should be destroyed
+  handleMissileImpact(missileX: number, missileY: number): boolean {
+    this.missileHits++;
+    
+    // Check if this is the final missile (sequence complete)
+    if (this.missileHits >= this.sequenceLength) {
+      // Final missile - create LARGE explosion and destroy asteroid
+      this.createExplosion(); // This creates the large explosion
+      this.scene.time.delayedCall(50, () => {
+        this.destroy();
+      });
+      return true; // Asteroid will be destroyed
+    } else {
+      // Not final missile - create SMALL explosion at impact point
+      this.createSmallExplosion(missileX, missileY);
+      return false; // Asteroid continues to exist
+    }
+  }
+
+  // Create a small explosion at a specific location
+  private createSmallExplosion(x: number, y: number): void {
+    const explosion = this.scene.add.sprite(x, y, 'explosion');
+    explosion.setDepth(180); // Above everything else
+    
+    // Make explosion very small (0.2 size)
+    const explosionScale = 0.2;
+    explosion.setDisplaySize(96 * explosionScale, 96 * explosionScale);
+    
+    // Play explosion animation
+    explosion.play('explosion');
+    
+    // Destroy explosion sprite when animation completes
+    explosion.on('animationcomplete', () => {
+      explosion.destroy();
+    });
+  }
+
+  // Delete method that handles explosion timing properly (legacy method)
+  delete(): void {
+    // Create explosion first
+    this.createExplosion();
+    
+    // Destroy the asteroid after a short delay to let explosion start
+    this.scene.time.delayedCall(50, () => {
+      this.destroy();
+    });
   }
 }

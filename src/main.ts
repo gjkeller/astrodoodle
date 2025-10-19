@@ -37,8 +37,7 @@ window.addEventListener('load', function () {
 		physics: {
 			default: 'arcade',
 			arcade: {
-				gravity: { x: 0, y: 0 }, // No gravity for our game
-				debug: false // Set to true for debugging physics bodies
+				gravity: { x: 0, y: 0 } // No gravity for our game
 			}
 		},
 		scale: {
