@@ -11,6 +11,9 @@ export type SweepParams = {
   vMax: number;
 };
 
+// Key used for localStorage
+const SWEEP_PARAMS_STORAGE_KEY = "vision_tuner_sweep_params";
+
 type SweepResult = {
   mask: any;
   params: SweepParams;
@@ -82,6 +85,12 @@ export class VisionTuner {
   constructor(width = 640, height = 480) {
     this.W = width;
     this.H = height;
+
+    // Try to load saved params from localStorage
+    this.loadSavedParams();
+
+    // Start the autosave interval - save every 1 second
+    this.startAutoSave();
 
     this.video = document.createElement("video");
     this.video.setAttribute("playsinline", "true"); // iOS/Safari
@@ -241,8 +250,8 @@ export class VisionTuner {
     const windowElapsed = now - this.fpsWindowStart;
     if (windowElapsed >= 1000) {
       const fps = (this.processedFrames * 1000) / windowElapsed;
-      if (fps < 30 && !this.lowFpsAlertShown) {
-        alert("OpenCV processing below 30 FPS");
+      if (fps > 1 && fps < 20 && !this.lowFpsAlertShown) {
+        alert("OpenCV processing below 20 FPS " +  fps);
         this.lowFpsAlertShown = true;
       }
       this.processedFrames = 0;
@@ -564,5 +573,52 @@ export class VisionTuner {
 
   public isManualDirty() {
     return this.manualDirty;
+  }
+
+  // Save current params to localStorage
+  private saveParamsToStorage() {
+    try {
+      const paramsToSave = this.manualParams || this.lockedParams;
+      if (paramsToSave) {
+        localStorage.setItem(SWEEP_PARAMS_STORAGE_KEY, JSON.stringify(paramsToSave));
+      }
+    } catch (e) {
+      console.error("Failed to save params to localStorage:", e);
+    }
+  }
+
+  // Start autosave interval (every 1 second)
+  private startAutoSave() {
+    // Set up a new interval to save every 1 second
+    this.autoSaveIntervalId = window.setInterval(() => {
+      this.saveParamsToStorage();
+    }, 1000);
+  }
+
+  // Load params from localStorage
+  private loadSavedParams() {
+    try {
+      const savedParamsJson = localStorage.getItem(SWEEP_PARAMS_STORAGE_KEY);
+      if (savedParamsJson) {
+        const params = JSON.parse(savedParamsJson) as SweepParams;
+        // Validate the structure
+        if (
+          typeof params.hMin === 'number' &&
+          typeof params.hMax === 'number' &&
+          typeof params.sMin === 'number' &&
+          typeof params.sMax === 'number' &&
+          typeof params.vMin === 'number' &&
+          typeof params.vMax === 'number'
+        ) {
+          this.manualParams = params;
+          this.lockedParams = { ...params };
+          this.bestParams = { ...params };
+          this.mode = "locked";
+          console.log("Loaded saved params from localStorage");
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load params from localStorage:", e);
+    }
   }
 }

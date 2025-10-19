@@ -119,7 +119,7 @@ export default class SweepScene extends Phaser.Scene {
       const message = `x: ${Math.round(x)}, y: ${Math.round(y)}`;
       this.posText.setText(message);
       if (this.domPos) this.domPos.textContent = message;
-	  addPoint(x,y, 1);
+	  addPoint(x, y, 1);
     } else {
       this.posText.setText("x: –, y: –");
       if (this.domPos) this.domPos.textContent = "–, –";
