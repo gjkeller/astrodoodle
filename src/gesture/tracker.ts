@@ -101,7 +101,7 @@ export function getBestPlayerGestures(removeDetectedPlayers: boolean = true): Ma
         'five-point star': 0.2,
         'triangle': 0.2,
         'null': 0.15,
-        'arrowhead': 0.25
+        'arrowhead': 0.20
     };
 
     for (const [playerKey, detections] of Object.entries(allResults)) {

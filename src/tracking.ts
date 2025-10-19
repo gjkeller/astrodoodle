@@ -245,7 +245,7 @@ export class VisionTuner {
     } catch (error) {
       console.warn('Failed to load hue tolerance from localStorage:', error);
     }
-    
+
     // Return default value if loading failed or value is invalid
     return INITIAL_HUE_TOLERANCE;
   }
@@ -269,6 +269,8 @@ export class VisionTuner {
   private loadBallsFromStorage(): SavedBall[] {
     try {
       const saved = localStorage.getItem(BALL_STORAGE_KEY);
+
+      console.log("LOADING BALLS");
       if (!saved) return [];
       const parsed = JSON.parse(saved);
       if (!Array.isArray(parsed)) return [];
@@ -282,6 +284,7 @@ export class VisionTuner {
           entry.params &&
           typeof entry.params === "object"
         ) {
+          console.log("LOADED BALLS", entry.params);
           result.push({
             id: entry.id,
             centerHue: entry.centerHue,

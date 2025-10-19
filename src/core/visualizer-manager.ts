@@ -79,6 +79,7 @@ class VisualizerManager {
   }
 
   private async initializeVision(): Promise<void> {
+    console.log("INITIALIZE VISION");
     if (!this.scene) return;
 
     try {
