@@ -1,15 +1,24 @@
 import { BitmapTextHelper } from '../ui/bitmapText';
 import { GAME_SETTINGS } from '../core/settings';
 
+interface SettingsButton {
+  label: string;
+  callback?: () => void;
+}
+
 export default class SettingsScene extends Phaser.Scene {
   private backButton: Phaser.GameObjects.Container;
   private settingsButtons: Phaser.GameObjects.Container[] = [];
+  private buttonConfigs: SettingsButton[] = [];
 
   constructor() {
     super('Settings');
   }
 
   create(): void {
+    // Initialize default button configurations
+    this.initializeButtonConfigs();
+    
     // Create background
     this.createBackground();
     
@@ -37,6 +46,16 @@ export default class SettingsScene extends Phaser.Scene {
     background.setDepth(0);
   }
 
+  private initializeButtonConfigs(): void {
+    this.buttonConfigs = [
+      { label: 'BUTTON 1' },
+      { label: 'BUTTON 2' },
+      { label: 'BUTTON 3' },
+      { label: 'BUTTON 4' },
+      { label: 'BUTTON 5' }
+    ];
+  }
+
   private createTitle(): void {
     const title = BitmapTextHelper.createTitleText(
       this,
@@ -52,28 +71,21 @@ export default class SettingsScene extends Phaser.Scene {
     const buttonHeight = 60;
     const buttonSpacing = 80;
     const startY = 200;
-    
-    const buttonLabels = [
-      'BUTTON 1',
-      'BUTTON 2', 
-      'BUTTON 3',
-      'BUTTON 4',
-      'BUTTON 5'
-    ];
 
-    for (let i = 0; i < 5; i++) {
+    this.buttonConfigs.forEach((config, index) => {
       const button = this.createSettingsButton(
         GAME_SETTINGS.CANVAS_WIDTH / 2,
-        startY + (i * buttonSpacing),
+        startY + (index * buttonSpacing),
         buttonWidth,
         buttonHeight,
-        buttonLabels[i]
+        config,
+        index
       );
       this.settingsButtons.push(button);
-    }
+    });
   }
 
-  private createSettingsButton(x: number, y: number, width: number, height: number, label: string): Phaser.GameObjects.Container {
+  private createSettingsButton(x: number, y: number, width: number, height: number, config: SettingsButton, buttonIndex: number): Phaser.GameObjects.Container {
     const button = this.add.container(x, y);
     
     // Create button background
@@ -88,7 +100,7 @@ export default class SettingsScene extends Phaser.Scene {
       this,
       0,
       0,
-      label
+      config.label
     );
     
     button.add([bg, text]);
@@ -114,8 +126,7 @@ export default class SettingsScene extends Phaser.Scene {
     });
     
     button.on('pointerdown', () => {
-      // Placeholder - button functionality will be added later
-      console.log(`Settings button clicked: ${label}`);
+      this.executeButtonCallback(buttonIndex);
     });
     
     return button;
@@ -176,5 +187,62 @@ export default class SettingsScene extends Phaser.Scene {
     keys.on('keydown-ESC', () => {
       this.scene.start('Menu');
     });
+  }
+
+  /**
+   * Execute callback for a button by index
+   * @param buttonIndex - The button index (0-4)
+   */
+  private executeButtonCallback(buttonIndex: number): void {
+    const config = this.buttonConfigs[buttonIndex];
+    if (config?.callback) {
+      config.callback();
+    } else {
+      console.log(`No callback configured for button ${buttonIndex + 1}`);
+    }
+  }
+
+  /**
+   * Set a callback function for a specific button
+   * @param buttonIndex - The button index (0-4)
+   * @param callback - The function to execute when the button is clicked
+   */
+  public setButtonCallback(buttonIndex: number, callback: () => void): void {
+    if (buttonIndex >= 0 && buttonIndex < this.buttonConfigs.length) {
+      this.buttonConfigs[buttonIndex].callback = callback;
+      console.log(`Callback configured for button ${buttonIndex + 1}`);
+    } else {
+      console.warn(`Invalid button index: ${buttonIndex}. Must be 0-${this.buttonConfigs.length - 1}.`);
+    }
+  }
+
+  /**
+   * Remove a callback for a specific button
+   * @param buttonIndex - The button index (0-4)
+   */
+  public removeButtonCallback(buttonIndex: number): void {
+    if (buttonIndex >= 0 && buttonIndex < this.buttonConfigs.length) {
+      delete this.buttonConfigs[buttonIndex].callback;
+      console.log(`Callback removed for button ${buttonIndex + 1}`);
+    } else {
+      console.warn(`Invalid button index: ${buttonIndex}. Must be 0-${this.buttonConfigs.length - 1}.`);
+    }
+  }
+
+  /**
+   * Get all button configurations
+   * @returns Array containing all button configurations
+   */
+  public getButtonConfigs(): SettingsButton[] {
+    return [...this.buttonConfigs];
+  }
+
+  /**
+   * Set all button configurations at once
+   * @param configs - Array of button configurations
+   */
+  public setButtonConfigs(configs: SettingsButton[]): void {
+    this.buttonConfigs = [...configs];
+    console.log(`Button configurations updated with ${configs.length} buttons`);
   }
 }
