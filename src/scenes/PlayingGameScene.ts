@@ -2,21 +2,23 @@ import { BitmapTextHelper } from '../ui/bitmapText';
 import { ProgressBar, Minimap } from '../ui';
 import { Asteroid } from '../gameplay';
 import { gameStore, eventBus } from '../core';
-import { GAME_SETTINGS } from '../core/settings';
+import { GAME_SETTINGS, msToTicks } from '../core/settings';
 import type { PlayerId } from '../types/global';
 
 export default class PlayingGameScene extends Phaser.Scene {
   private background1: Phaser.GameObjects.Image;
   private background2: Phaser.GameObjects.Image;
   private backgroundScrollY: number = 0;
+  private backgroundTargetY1: number = 0;
+  private backgroundTargetY2: number = 0;
   private progressBar: ProgressBar;
   private asteroids: Asteroid[] = [];
   private staticShip: Phaser.GameObjects.Image;
   private minimap: Minimap;
+  private fpsText: Phaser.GameObjects.Text | null = null;
   
   // Game timing
-  private gameStartTime: number = 0;
-  private gameDuration: number = 60000; // 60 seconds
+  private gameDurationTicks: number = msToTicks(60000); // 60 seconds = 1800 ticks
   private isGameActive: boolean = false;
   private isSpawningActive: boolean = false;
   private resultsOverlay: Phaser.GameObjects.Container | null = null;
@@ -25,10 +27,15 @@ export default class PlayingGameScene extends Phaser.Scene {
   private countdownText: Phaser.GameObjects.Text | Phaser.GameObjects.BitmapText | null = null;
   private countdownTimer: Phaser.Time.TimerEvent | null = null;
   
+  // Tick-based timing
+  private accumulator: number = 0;
+  private currentTick: number = 0;
+  private gameStartTick: number = 0;
+  private ticksSinceLastSpawn: number = 0;
+  
   // Difficulty progression
-  private spawnTimer: Phaser.Time.TimerEvent | null = null;
-  private currentSpawnRate: number = 2000; // Start with 2 seconds
-  private currentFallSpeed: number = 50; // pixels per second
+  private currentSpawnRateTicks: number = msToTicks(2000); // Start with 2 seconds = 60 ticks
+  private currentFallSpeed: number = 1.67; // pixels per tick (50 pixels/second / 30 ticks/second)
   
   constructor() {
     super('PlayingGame');
@@ -61,6 +68,29 @@ export default class PlayingGameScene extends Phaser.Scene {
     }
   }
   
+  update(_time: number, delta: number): void {
+    // Update FPS counter only if enabled in settings
+    if (GAME_SETTINGS.SHOW_FPS_COUNTER && this.fpsText) {
+      const fps = Math.round(1000 / delta);
+      this.fpsText.setText(`FPS: ${fps}`);
+    }
+    
+    // Debug: Log update calls
+    if (this.currentTick < 5) {
+      console.log(`update called: isGameActive=${this.isGameActive}, currentTick=${this.currentTick}`);
+    }
+    
+    if (!this.isGameActive) return;
+    
+    this.accumulator += delta;
+    
+    while (this.accumulator >= GAME_SETTINGS.TICK_DURATION_MS) {
+      this.fixedUpdate();
+      this.accumulator -= GAME_SETTINGS.TICK_DURATION_MS;
+      this.currentTick++;
+    }
+  }
+  
   private createBackground(): void {
     // Create two background images for seamless looping
     this.background1 = this.add.image(
@@ -88,6 +118,10 @@ export default class PlayingGameScene extends Phaser.Scene {
     this.background1.y = GAME_SETTINGS.CANVAS_HEIGHT / 2;
     this.background2.y = GAME_SETTINGS.CANVAS_HEIGHT / 2 - 3600; // Position second background above first
     
+    // Initialize target positions for smooth tweening
+    this.backgroundTargetY1 = this.background1.y;
+    this.backgroundTargetY2 = this.background2.y;
+    
     this.background1.setDepth(0);
     this.background2.setDepth(0);
   }
@@ -113,6 +147,13 @@ export default class PlayingGameScene extends Phaser.Scene {
     );
     this.staticShip.setScale(0.8);
     this.staticShip.setDepth(100);
+    
+    // Enable physics body for collision detection
+    this.physics.world.enable(this.staticShip);
+    const shipBody = this.staticShip.body as Phaser.Physics.Arcade.Body;
+    shipBody.setSize(80, 80); // Set collision box size
+    shipBody.setOffset(-40, -40); // Center the collision box
+    shipBody.setImmovable(true); // Ship doesn't move
   }
   
   private createPlayerHUD(): void {
@@ -156,6 +197,22 @@ export default class PlayingGameScene extends Phaser.Scene {
   private createMinimap(): void {
     // Create minimap in bottom-left corner, above the progress bar
     this.minimap = new Minimap(this, 100, GAME_SETTINGS.CANVAS_HEIGHT - 140);
+    
+    // Create FPS counter if enabled
+    if (GAME_SETTINGS.SHOW_FPS_COUNTER) {
+      this.createFPSCounter();
+    }
+  }
+  
+  private createFPSCounter(): void {
+    this.fpsText = this.add.text(10, 10, 'FPS: 0', {
+      fontSize: '16px',
+      fontFamily: '"Press Start 2P", monospace',
+      color: '#ffffff',
+      backgroundColor: '#000000',
+      padding: { x: 8, y: 4 }
+    });
+    this.fpsText.setDepth(200);
   }
   
   private startCountdown(): void {
@@ -203,7 +260,10 @@ export default class PlayingGameScene extends Phaser.Scene {
       this.countdownTimer = null;
     }
     
-    this.gameStartTime = this.time.now;
+    // Initialize tick-based timing
+    this.gameStartTick = 0;
+    this.currentTick = 0;
+    this.accumulator = 0;
     this.isGameActive = true;
     this.isSpawningActive = true;
     
@@ -211,28 +271,18 @@ export default class PlayingGameScene extends Phaser.Scene {
     
     // Start asteroid spawning
     this.startAsteroidSpawning();
-    
-    // Start the main game loop
-    this.time.addEvent({
-      delay: 16, // ~60 FPS
-      callback: this.updateGame,
-      callbackScope: this,
-      loop: true
-    });
+    // Game loop now handled by Phaser's update() method
   }
   
   private startAsteroidSpawning(): void {
-    // Debug logging removed
-    this.spawnTimer = this.time.addEvent({
-      delay: this.currentSpawnRate,
-      callback: this.spawnAsteroid,
-      callbackScope: this,
-      loop: true
-    });
+    // Spawning now handled by tick counter in fixedUpdate()
+    this.ticksSinceLastSpawn = 0;
   }
   
   private spawnAsteroid(): void {
     if (!this.isSpawningActive) return;
+    
+    console.log('spawnAsteroid called, isSpawningActive:', this.isSpawningActive);
     
     // Generate random WASD sequence (1-4 characters)
     const sequenceLength = Math.random() < 0.3 ? 4 : Math.random() < 0.5 ? 3 : Math.random() < 0.7 ? 2 : 1;
@@ -240,9 +290,11 @@ export default class PlayingGameScene extends Phaser.Scene {
     
     // Spawn first asteroid with collision detection
     const spawnX = this.findValidSpawnPosition();
+    console.log('spawnX:', spawnX);
     if (spawnX !== null) {
       const asteroid = new Asteroid(this, spawnX, -100, 'center', sequence);
       this.asteroids.push(asteroid);
+      console.log('Asteroid spawned, total asteroids:', this.asteroids.length);
     }
     
     // Chance for multiple asteroids to spawn at once
@@ -295,18 +347,33 @@ export default class PlayingGameScene extends Phaser.Scene {
     return sequence.join(' ');
   }
   
-  private updateGame(): void {
-    if (!this.isGameActive) return;
+  private fixedUpdate(): void {
+    const elapsedTicks = this.currentTick - this.gameStartTick;
+    const progress = Math.min(elapsedTicks / this.gameDurationTicks, 1);
     
-    const elapsed = this.time.now - this.gameStartTime;
-    const progress = Math.min(elapsed / this.gameDuration, 1);
+    // Debug: Log tick rate every 150 ticks (5 seconds at 30 TPS)
+    if (elapsedTicks % 150 === 0 && elapsedTicks > 0) {
+      console.log(`Tick ${elapsedTicks}: Progress ${(progress * 100).toFixed(1)}%`);
+    }
     
-    // Update progress bar based on time
+    // Debug: Log first few ticks
+    if (elapsedTicks < 10) {
+      console.log(`fixedUpdate: elapsedTicks=${elapsedTicks}, isSpawningActive=${this.isSpawningActive}, ticksSinceLastSpawn=${this.ticksSinceLastSpawn}`);
+    }
+    
+    // Update progress bar based on ticks
     this.progressBar.setProgress(0, progress);
     
     // Update difficulty over time (only while spawning is active)
     if (this.isSpawningActive) {
-      this.updateDifficulty(elapsed);
+      this.updateDifficulty(elapsedTicks);
+      this.ticksSinceLastSpawn++;
+      
+      if (this.ticksSinceLastSpawn >= this.currentSpawnRateTicks) {
+        console.log('Spawning asteroid, ticksSinceLastSpawn:', this.ticksSinceLastSpawn, 'currentSpawnRateTicks:', this.currentSpawnRateTicks);
+        this.spawnAsteroid();
+        this.ticksSinceLastSpawn = 0;
+      }
     }
     
     // Update asteroids (always continue until game ends)
@@ -316,13 +383,9 @@ export default class PlayingGameScene extends Phaser.Scene {
     this.updateBackgroundScroll();
     
     // Check if time limit has expired
-    if (elapsed >= this.gameDuration && this.isSpawningActive) {
+    if (elapsedTicks >= this.gameDurationTicks && this.isSpawningActive) {
       // Stop spawning new asteroids but keep game running
       this.isSpawningActive = false;
-      if (this.spawnTimer) {
-        this.spawnTimer.destroy();
-        this.spawnTimer = null;
-      }
       console.log('Time limit reached - stopping asteroid spawning');
     }
     
@@ -335,84 +398,89 @@ export default class PlayingGameScene extends Phaser.Scene {
   private updateBackgroundScroll(): void {
     if (!this.isGameActive) return;
     
-    // Scroll the background downward at the exact same speed as asteroids fall
-    const deltaTime = 16; // Assume 60 FPS for consistent movement
-    const scrollSpeed = this.currentFallSpeed * (deltaTime / 1000);
+    // Scroll pixels per tick (no deltaTime conversion needed)
+    const scrollSpeed = this.currentFallSpeed;
     
     // Update scroll position (scroll downward)
     this.backgroundScrollY += scrollSpeed;
     
-    // Move both backgrounds downward
-    this.background1.y += scrollSpeed;
-    this.background2.y += scrollSpeed;
+    // Update target positions for smooth tweening
+    this.backgroundTargetY1 += scrollSpeed;
+    this.backgroundTargetY2 += scrollSpeed;
     
     // Check if first background has moved completely off screen (below canvas)
     // When background1's top edge (y) is below the canvas bottom
-    if (this.background1.y > GAME_SETTINGS.CANVAS_HEIGHT) {
+    if (this.backgroundTargetY1 > GAME_SETTINGS.CANVAS_HEIGHT) {
       // Move first background to above the second background
-      this.background1.y = this.background2.y - 3600;
+      this.backgroundTargetY1 = this.backgroundTargetY2 - 3600;
     }
     
     // Check if second background has moved completely off screen (below canvas)
     // When background2's top edge (y) is below the canvas bottom
-    if (this.background2.y > GAME_SETTINGS.CANVAS_HEIGHT) {
+    if (this.backgroundTargetY2 > GAME_SETTINGS.CANVAS_HEIGHT) {
       // Move second background to above the first background
-      this.background2.y = this.background1.y - 3600;
+      this.backgroundTargetY2 = this.backgroundTargetY1 - 3600;
     }
+    
+    // Use tweens for smooth movement (33.33ms = 1 tick at 30 TPS)
+    this.tweens.add({
+      targets: this.background1,
+      y: this.backgroundTargetY1,
+      duration: GAME_SETTINGS.TICK_DURATION_MS,
+      ease: 'Linear'
+    });
+    
+    this.tweens.add({
+      targets: this.background2,
+      y: this.backgroundTargetY2,
+      duration: GAME_SETTINGS.TICK_DURATION_MS,
+      ease: 'Linear'
+    });
   }
 
-  private updateDifficulty(elapsed: number): void {
-    const difficultyProgress = elapsed / this.gameDuration;
+  private updateDifficulty(elapsedTicks: number): void {
+    const difficultyProgress = elapsedTicks / this.gameDurationTicks;
     
     // Increase spawn rate (faster spawning)
-    const newSpawnRate = Math.max(500, 2000 - (difficultyProgress * 1500));
-    
-    // Only update if the rate has changed significantly
-    if (Math.abs(newSpawnRate - this.currentSpawnRate) > 50) {
-      this.currentSpawnRate = newSpawnRate;
-      
-      // Restart spawn timer with new rate if it exists
-      if (this.spawnTimer) {
-        this.spawnTimer.destroy();
-        this.startAsteroidSpawning();
-      }
-    }
+    // OLD: 2000ms to 500ms -> NEW: 60 ticks to 15 ticks (30 TPS)
+    const newSpawnRate = Math.max(15, 60 - Math.floor(difficultyProgress * 45));
+    this.currentSpawnRateTicks = newSpawnRate;
     
     // Increase fall speed
-    this.currentFallSpeed = 50 + (difficultyProgress * 100);
+    // OLD: 50 to 150 pixels/second -> NEW: 1.67 to 5 pixels/tick (30 TPS)
+    this.currentFallSpeed = 1.67 + (difficultyProgress * 3.33);
   }
   
   private updateAsteroids(): void {
-    const deltaTime = 16; // Assume 60 FPS for consistent movement
     const shipY = this.staticShip.y;
     const shipX = this.staticShip.x;
-    const collisionRadius = 50; // Collision detection radius
-    
-    // Debug logging removed to reduce console spam
     
     for (let i = this.asteroids.length - 1; i >= 0; i--) {
       const asteroid = this.asteroids[i];
       
-      // Calculate direction toward player
-      const dx = shipX - asteroid.x;
-      const dy = shipY - asteroid.y;
+      // Update text positions to follow physics body
+      asteroid.updateTextPositions();
+      
+      // Calculate direction toward player using physics body position
+      const asteroidX = asteroid.getPhysicsX();
+      const asteroidY = asteroid.getPhysicsY();
+      const dx = shipX - asteroidX;
+      const dy = shipY - asteroidY;
       const distance = Math.sqrt(dx * dx + dy * dy);
       
-      // Normalize direction and apply speed
+      // Set velocity for smooth movement (pixels per tick * 30 TPS = pixels per second)
       if (distance > 0) {
-        const moveX = (dx / distance) * this.currentFallSpeed * (deltaTime / 1000);
-        const moveY = (dy / distance) * this.currentFallSpeed * (deltaTime / 1000);
-        
-        asteroid.x += moveX;
-        asteroid.y += moveY;
+        const velocityX = (dx / distance) * this.currentFallSpeed * 30; // Convert to pixels/second
+        const velocityY = (dy / distance) * this.currentFallSpeed * 30; // Convert to pixels/second
+        asteroid.setVelocity(velocityX, velocityY);
       }
       
-      // Check for collision with ship
+      // Check for collision with ship using manual distance check (more reliable)
       const currentDistance = Math.sqrt(
-        Math.pow(asteroid.x - shipX, 2) + Math.pow(asteroid.y - shipY, 2)
+        Math.pow(asteroidX - shipX, 2) + Math.pow(asteroidY - shipY, 2)
       );
       
-      if (currentDistance < collisionRadius) {
+      if (currentDistance < 50) { // Collision radius
         // Asteroid hit the ship - remove it and reset multiplier
         asteroid.destroy();
         this.asteroids.splice(i, 1);
@@ -422,9 +490,9 @@ export default class PlayingGameScene extends Phaser.Scene {
       }
       
       // Remove asteroids that have fallen off screen or moved too far
-      if (asteroid.y > GAME_SETTINGS.CANVAS_HEIGHT + 100 || 
-          asteroid.x < -100 || 
-          asteroid.x > GAME_SETTINGS.CANVAS_WIDTH + 100) {
+      if (asteroidY > GAME_SETTINGS.CANVAS_HEIGHT + 100 || 
+          asteroidX < -100 || 
+          asteroidX > GAME_SETTINGS.CANVAS_WIDTH + 100) {
         asteroid.destroy();
         this.asteroids.splice(i, 1);
       }
@@ -479,19 +547,14 @@ export default class PlayingGameScene extends Phaser.Scene {
     
     if (validAsteroids.length === 0) return null;
     
-    // Find the closest one to the player
-    const shipX = this.staticShip.x;
-    const shipY = this.staticShip.y;
-    
+    // Find the one with the lowest bottom Y position (closest to player)
     return validAsteroids.reduce((closest, current) => {
-      const closestDistance = Math.sqrt(
-        Math.pow(closest.x - shipX, 2) + Math.pow(closest.y - shipY, 2)
-      );
-      const currentDistance = Math.sqrt(
-        Math.pow(current.x - shipX, 2) + Math.pow(current.y - shipY, 2)
-      );
+      // Get the bottom Y position of each asteroid sprite
+      const closestBottomY = closest.y + (closest.sprite.displayHeight / 2);
+      const currentBottomY = current.y + (current.sprite.displayHeight / 2);
       
-      return currentDistance < closestDistance ? current : closest;
+      // Return the one with the highest bottom Y (lowest on screen, closest to player)
+      return currentBottomY > closestBottomY ? current : closest;
     });
   }
   
@@ -556,12 +619,6 @@ export default class PlayingGameScene extends Phaser.Scene {
   private endGame(): void {
     this.isGameActive = false;
     this.isSpawningActive = false;
-    
-    // Stop spawning (should already be stopped, but just in case)
-    if (this.spawnTimer) {
-      this.spawnTimer.destroy();
-      this.spawnTimer = null;
-    }
     
     console.log('Game ended - all asteroids destroyed');
     

@@ -1,13 +1,14 @@
 import type { PlayerSide } from '../types/global';
 
 export class Asteroid extends Phaser.GameObjects.Container {
-  private sprite: Phaser.GameObjects.Image;
+  public sprite: Phaser.GameObjects.Image;
   private characterTexts: Phaser.GameObjects.Text[] = [];
   private side: PlayerSide;
   private sequence: string;
   private currentIndex: number = 0;
   private consumedKeys: boolean[] = [];
   private sequenceLength: number;
+  public body: Phaser.Physics.Arcade.Body;
   
   constructor(
     scene: Phaser.Scene,
@@ -41,6 +42,12 @@ export class Asteroid extends Phaser.GameObjects.Container {
     
     scene.add.existing(this);
     this.setDepth(150); // Ensure asteroids are visible above background
+    
+    // Enable physics body for smooth movement on the container
+    this.scene.physics.world.enable(this);
+    this.body = this.body as Phaser.Physics.Arcade.Body;
+    this.body.setSize(80, 80); // Set collision box size
+    this.body.setOffset(-40, -40); // Center the collision box
     
     // Debug logging
     console.log(`Created asteroid at (${x}, ${y}) with sequence: ${sequence}, length: ${this.sequenceLength}, scale: ${scale}, rotation: ${randomRotation.toFixed(2)}`);
@@ -105,6 +112,12 @@ export class Asteroid extends Phaser.GameObjects.Container {
     }
   }
   
+  // Update text positions to follow physics body
+  updateTextPositions(): void {
+    // Text is already part of the container, so it moves with the container automatically
+    // No additional positioning needed since physics body is on the container
+  }
+  
   private updateDisplay(): void {
     // Update each character text color
     for (let i = 0; i < this.characterTexts.length; i++) {
@@ -128,5 +141,22 @@ export class Asteroid extends Phaser.GameObjects.Container {
   
   isComplete(): boolean {
     return this.currentIndex >= this.sequenceLength;
+  }
+  
+  // Physics body methods for smooth movement
+  setVelocity(vx: number, vy: number): void {
+    this.body.setVelocity(vx, vy);
+  }
+  
+  getPhysicsX(): number {
+    return this.body.x;
+  }
+  
+  getPhysicsY(): number {
+    return this.body.y;
+  }
+  
+  getPhysicsBody(): Phaser.Physics.Arcade.Body {
+    return this.body;
   }
 }

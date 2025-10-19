@@ -22,6 +22,13 @@ export const GAME_SETTINGS = {
   MIN_MULTIPLIER: 1,
   PROGRESS_INCREMENT: 0.02, // 2% of goal per correct match
   
+  // Tick-based game timing
+  TICKS_PER_SECOND: 30,
+  TICK_DURATION_MS: 33.33, // 1000ms / 30 ticks
+  
+  // Debug settings
+  SHOW_FPS_COUNTER: true,
+
   // Colors
   COLORS: {
     ORANGE: 0xff8800,
@@ -70,4 +77,13 @@ export function normalizeX(x: number): number {
 
 export function normalizeY(y: number): number {
   return y / GAME_SETTINGS.CANVAS_HEIGHT;
+}
+
+// Tick-based timing helper functions
+export function msToTicks(ms: number): number {
+  return Math.round(ms / GAME_SETTINGS.TICK_DURATION_MS);
+}
+
+export function ticksToMs(ticks: number): number {
+  return ticks * GAME_SETTINGS.TICK_DURATION_MS;
 }

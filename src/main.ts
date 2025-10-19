@@ -34,6 +34,13 @@ window.addEventListener('load', function () {
 		height: 720,
 		backgroundColor: "#000000", // Black background
 		parent: "game-container",
+		physics: {
+			default: 'arcade',
+			arcade: {
+				gravity: { x: 0, y: 0 }, // No gravity for our game
+				debug: false // Set to true for debugging physics bodies
+			}
+		},
 		scale: {
 			mode: Phaser.Scale.ScaleModes.FIT,
 			autoCenter: Phaser.Scale.Center.CENTER_BOTH

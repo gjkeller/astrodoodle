@@ -1,8 +1,8 @@
-import { GAME_SETTINGS } from '../core/settings';
+import { GAME_SETTINGS, msToTicks } from '../core/settings';
 
 interface KeyEvent {
   key: string;
-  timestamp: number;
+  timestamp: number; // Now stores tick number instead of milliseconds
 }
 
 export class Minimap extends Phaser.GameObjects.Container {
@@ -10,7 +10,7 @@ export class Minimap extends Phaser.GameObjects.Container {
   private keyEvents: KeyEvent[] = [];
   private keyDisplays: Phaser.GameObjects.Text[] = [];
   private maxKeys: number = 3;
-  private timeWindow: number = 500; // 0.5 seconds
+  private timeWindowTicks: number = msToTicks(500); // 0.5 seconds = 15 ticks (30 TPS)
   
   constructor(scene: Phaser.Scene, x: number, y: number) {
     super(scene, x, y);
@@ -49,14 +49,14 @@ export class Minimap extends Phaser.GameObjects.Container {
   }
   
   addKeyPress(key: string): void {
-    const now = this.scene.time.now;
+    const currentTick = (this.scene as any).currentTick || 0;
     
     // Add new key event
-    this.keyEvents.push({ key, timestamp: now });
+    this.keyEvents.push({ key, timestamp: currentTick });
     
     // Remove old events outside time window
     this.keyEvents = this.keyEvents.filter(event => 
-      now - event.timestamp <= this.timeWindow
+      currentTick - event.timestamp <= this.timeWindowTicks
     );
     
     // Keep only the most recent maxKeys events (FIFO)
@@ -72,9 +72,9 @@ export class Minimap extends Phaser.GameObjects.Container {
     this.keyDisplays.forEach(display => display.setVisible(false));
     
     // Show current key events (most recent first)
-    const now = this.scene.time.now;
+    const currentTick = (this.scene as any).currentTick || 0;
     const validEvents = this.keyEvents.filter(event => 
-      now - event.timestamp <= this.timeWindow
+      currentTick - event.timestamp <= this.timeWindowTicks
     );
     
     validEvents.forEach((event, index) => {
@@ -95,9 +95,9 @@ export class Minimap extends Phaser.GameObjects.Container {
   
   update(): void {
     // Clean up old events
-    const now = this.scene.time.now;
+    const currentTick = (this.scene as any).currentTick || 0;
     this.keyEvents = this.keyEvents.filter(event => 
-      now - event.timestamp <= this.timeWindow
+      currentTick - event.timestamp <= this.timeWindowTicks
     );
     
     this.updateDisplay();
