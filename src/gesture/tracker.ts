@@ -85,7 +85,7 @@ export function deletePlayer(playerId: number): boolean {
  * @param removeDetectedPlayers Whether to remove players with detected gestures (default: true)
  * @returns A map of player IDs to their best detected gesture name
  */
-export function getBestPlayerGestures(threshold: number = 0.12, removeDetectedPlayers: boolean = true): Map<number, string> {
+export function getBestPlayerGestures(threshold: number = 0.10, removeDetectedPlayers: boolean = true): Map<number, string> {
     const { results: allResults } = detectAllPlayers();
     const bestGestures = new Map<number, string>();
 
@@ -99,6 +99,7 @@ export function getBestPlayerGestures(threshold: number = 0.12, removeDetectedPl
         }
         const playerId = Number(playerKey);
         const maxResult = validDetections.reduce((best, current) => current.Score > best.Score ? current : best);
+        console.log(validDetections, maxResult);
         
         if (maxResult.Score > threshold) {
             bestGestures.set(playerId, maxResult.Name);

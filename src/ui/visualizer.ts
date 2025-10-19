@@ -346,4 +346,24 @@ export class Visualizer {
   getContainer(): Phaser.GameObjects.Container {
     return this.container;
   }
+
+  /**
+   * Updates the border color of the visualizer
+   * @param color The new border color as a hex number
+   * @param borderWidth The border width (optional, keeps current if not provided)
+   * @param backgroundColor The background color (optional, keeps current if not provided)
+   */
+  setBorderColor(color: number, borderWidth?: number, backgroundColor?: number): void {
+    // Clear and redraw the border with new color
+    this.border.clear();
+    
+    // Use current background color if not provided
+    const bgColor = backgroundColor !== undefined ? backgroundColor : 0x000000;
+    const bWidth = borderWidth !== undefined ? borderWidth : 2;
+    
+    this.border.fillStyle(bgColor, 0.3);
+    this.border.fillRect(-this.width / 2, -this.height / 2, this.width, this.height);
+    this.border.lineStyle(bWidth, color, 1);
+    this.border.strokeRect(-this.width / 2, -this.height / 2, this.width, this.height);
+  }
 }
