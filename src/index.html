@@ -1,43 +1,142 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>LED Ping-Pong Ball Tuner</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!-- Phaser (if you don’t use bundler for phaser, else remove this) -->
-  <script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.js"></script>
-  <!-- OpenCV.js -->
+  <title>Ping-Pong Ball Tracker</title>
   <script async src="https://docs.opencv.org/4.x/opencv.js"></script>
   <style>
-    body { margin: 0; background:#0e0e0e; color:#eee; font-family: system-ui, sans-serif; }
-    #controls { position: fixed; top: 8px; left: 8px; z-index: 10; background: #111; padding: 10px 12px; border-radius: 10px; border: 1px solid #333; }
-    #controls h3 { margin: 0 0 8px 0; font-size: 14px; }
-    .row { display:flex; gap:8px; align-items:center; margin:6px 0; }
-    .row label { width: 56px; font-size:12px; color:#bbb; }
-    .row input[type=range]{ width: 180px; }
-    #startBtn { width:100%; margin-top: 6px; padding: 6px 10px; background:#2b6fff; color:#fff; border:0; border-radius:8px; font-weight:600; cursor:pointer; }
-    #pos { font-weight:600; }
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #050505;
+      color: #f0f3ff;
+      font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+    }
+    #controls {
+      position: fixed;
+      top: 18px;
+      left: 18px;
+      width: 300px;
+      padding: 18px 20px;
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      background: rgba(9, 12, 22, 0.88);
+      backdrop-filter: blur(18px);
+      box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+    }
+    #controls h1 {
+      margin: 0 0 12px;
+      font-size: 17px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #7da9ff;
+    }
+    #status {
+      margin: 0 0 14px;
+      font-size: 13px;
+      line-height: 1.5;
+      color: #b7c5ff;
+    }
+    #stats, #ballList {
+      display: grid;
+      gap: 10px;
+      margin-bottom: 14px;
+      padding: 10px 12px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .stat-label {
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #8f9bb9;
+      margin-bottom: 2px;
+      display: block;
+    }
+    .stat-value {
+      font-variant-numeric: tabular-nums;
+      font-size: 15px;
+      color: #e8f1ff;
+    }
+    #hueControl {
+      margin-bottom: 12px;
+    }
+    #hueControl label {
+      display: block;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #8f9bb9;
+      margin-bottom: 4px;
+    }
+    #hueControl span {
+      margin-left: 6px;
+      font-size: 13px;
+      color: #e8f1ff;
+    }
+    #hueControl input[type=range] {
+      width: 100%;
+    }
+    #controls button {
+      width: 100%;
+      padding: 10px 14px;
+      margin-top: 6px;
+      border: none;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #2f7bff, #58c6ff);
+      color: #fff;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: transform 0.2s ease, opacity 0.2s ease;
+    }
+    #controls button[disabled] {
+      opacity: 0.6;
+      cursor: default;
+      transform: none;
+    }
+    #controls button:not([disabled]):hover {
+      transform: translateY(-1px);
+    }
+    #game {
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
   </style>
 </head>
 <body>
   <div id="controls">
-    <h3>Ball Tracker — Tuner</h3>
-    <div class="row"><label>H Min</label><input id="hMin" type="range" min="0" max="179" value="20"><span id="hMinV">20</span></div>
-    <div class="row"><label>H Max</label><input id="hMax" type="range" min="0" max="179" value="35"><span id="hMaxV">35</span></div>
-    <div class="row"><label>S Min</label><input id="sMin" type="range" min="0" max="255" value="120"><span id="sMinV">120</span></div>
-    <div class="row"><label>S Max</label><input id="sMax" type="range" min="0" max="255" value="255"><span id="sMaxV">255</span></div>
-    <div class="row"><label>V Min</label><input id="vMin" type="range" min="0" max="255" value="120"><span id="vMinV">120</span></div>
-    <div class="row"><label>V Max</label><input id="vMax" type="range" min="0" max="255" value="255"><span id="vMaxV">255</span></div>
-    <div class="row"><label>Bright</label><input id="bright" type="range" min="-100" max="100" value="0"><span id="brightV">0</span></div>
-    <div class="row"><span id="pos">x: –, y: –</span></div>
+    <h1>Ball Tracker</h1>
+    <p id="status">Loading OpenCV…</p>
+    <div id="stats">
+      <div>
+        <span class="stat-label">Position</span>
+        <span class="stat-value" id="posDisplay">–, –</span>
+      </div>
+      <div>
+        <span class="stat-label">HSV Window</span>
+        <span class="stat-value" id="paramDisplay">–</span>
+      </div>
+    </div>
+    <div id="hueControl">
+      <label for="slider-hTol">Hue Tolerance<span id="value-hTol">16°</span></label>
+      <input id="slider-hTol" type="range" min="4" max="40" value="16">
+    </div>
+    <div id="ballList">No balls registered</div>
     <button id="startBtn">Start Camera</button>
     <button id="backBtn">Back</button>
+    <button id="clearBtn">Clear Balls</button>
   </div>
 
   <div id="game"></div>
 
-
-  <!-- Your bundle should load main.ts compiled output. If using Vite/Webpack/Rollup, this is injected automatically. -->
-  <!-- If you need direct scripts, include them below after bundling. -->
+  <script type="module" src="/src/main.ts"></script>
 </body>
 </html>
