@@ -238,7 +238,7 @@ export default class VisualizerTestScene extends Phaser.Scene {
       GAME_SETTINGS.CANVAS_WIDTH / 2, 
       GAME_SETTINGS.CANVAS_HEIGHT / 2, 
       0.4, // scale
-      0x4488FF, // border color
+      0xFFFFFF, // border color - white by default
       3, // border width
       0x000066 // background color
     );
