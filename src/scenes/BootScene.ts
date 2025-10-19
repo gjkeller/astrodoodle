@@ -23,6 +23,9 @@ export default class BootScene extends Phaser.Scene {
     this.load.spritesheet('explosion', ASSETS.explosion, { frameWidth: 96, frameHeight: 96 });
     this.load.image('missile', ASSETS.missile);
     
+    // Load character images
+    this.load.image('anshul', ASSETS.anshulImage);
+    
     // Load glyph sprites
     this.load.image('glyph-null', ASSETS.nullGlyph);
     this.load.image('glyph-star', ASSETS.starGlyph);

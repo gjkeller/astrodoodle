@@ -178,7 +178,7 @@ export default class SelectPlayersScene extends Phaser.Scene {
   private startGame(): void {
     // Singleplayer mode: only need player 0 to be ready
     if (gameStore.players[0].ready === 'ready') {
-      this.scene.start('PlayingGame');
+      this.scene.start('Tutorial');
     }
   }
 

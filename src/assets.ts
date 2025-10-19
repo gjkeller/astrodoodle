@@ -12,6 +12,9 @@ import meteor1 from './assets/meteor1.png';
 import explosion from './assets/explosion.png';
 import missile from './assets/missile.png';
 
+// Character images
+import anshulImage from '../public/assets/anshul.png';
+
 // Glyph sprites for wand mode
 import nullGlyph from './assets/null.png';
 import starGlyph from './assets/star.png';
@@ -39,6 +42,8 @@ export const ASSETS = {
   meteor1,
   explosion,
   missile,
+  // Character images
+  anshulImage,
   // Glyph sprites
   nullGlyph,
   starGlyph,
