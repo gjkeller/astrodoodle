@@ -26,6 +26,24 @@ class VisualizerManager {
   private currentPoints: Point[] = [];
   private currentPosition: Point | null = null;
   private readonly PLAYER_ID = 1; // Same as VisualizerTestScene
+  
+  // Dual wand support for multiplayer
+  private wand2Spell: Spell = Spell.NONE;
+  private wand2LastSpellTime: number = 0;
+  private wand2VisualizerSpell: Spell = Spell.NONE;
+  private wand2VisualizerSpellTime: number = 0;
+  private wand2LastPointsTime: number = 0;
+  private wand2LastPositionTime: number = 0;
+  private wand2CurrentPoints: Point[] = [];
+  private wand2CurrentPosition: Point | null = null;
+  private readonly WAND2_PLAYER_ID = 2; // Purple wand
+  
+  // Player-specific calibration tracking
+  private player1Calibrated: boolean = false;
+  private player2Calibrated: boolean = false;
+  private currentCalibrationPlayer: 1 | 2 = 1;
+  private player1BallId: number | null = null;
+  private player2BallId: number | null = null;
 
   private constructor() {
     // Private constructor for singleton
@@ -145,21 +163,31 @@ class VisualizerManager {
 
     try {
       const bestGestures = getBestPlayerGestures();
-      const gesture = bestGestures.get(this.PLAYER_ID);
       
-      if (gesture) {
-        // Map gesture names to our Spell enum (gesture is a string)
-        const gestureMapping: Record<string, Spell> = {
-          'null': Spell.NULL,
-          'five-point star': Spell.STAR,
-          'triangle': Spell.TRIANGLE,
-          'arrow': Spell.ARROW,
-          'arrowhead': Spell.ARROW
-        };
-        
-        const mappedSpell = gestureMapping[gesture.toLowerCase()];
+      // Map gesture names to our Spell enum (gesture is a string)
+      const gestureMapping: Record<string, Spell> = {
+        'null': Spell.NULL,
+        'five-point star': Spell.STAR,
+        'triangle': Spell.TRIANGLE,
+        'arrow': Spell.ARROW,
+        'arrowhead': Spell.ARROW
+      };
+      
+      // Check gestures for wand 1 (orange - player 1)
+      const wand1Gesture = bestGestures.get(this.PLAYER_ID);
+      if (wand1Gesture) {
+        const mappedSpell = gestureMapping[wand1Gesture.toLowerCase()];
         if (mappedSpell) {
           this.setCurrentSpell(mappedSpell);
+        }
+      }
+      
+      // Check gestures for wand 2 (purple - player 2)
+      const wand2Gesture = bestGestures.get(this.WAND2_PLAYER_ID);
+      if (wand2Gesture) {
+        const mappedSpell = gestureMapping[wand2Gesture.toLowerCase()];
+        if (mappedSpell) {
+          this.setWand2Spell(mappedSpell);
         }
       }
     } catch (error) {
@@ -171,40 +199,114 @@ class VisualizerManager {
     if (!this.vision || !this.cameraStarted) return;
 
     try {
-      // Check if we have a valid position from the vision system
-      if (this.vision.primaryX !== null && this.vision.primaryY !== null) {
-        // Update current position
-        this.currentPosition = { 
-          x: this.vision.primaryX, 
-          y: this.vision.primaryY 
-        };
-        
-        // Add point to tracker system for player 1
-        addPoint(this.currentPosition.x, this.currentPosition.y, this.PLAYER_ID);
-        
-        // Update timestamp for wand presence detection
-        this.lastPositionTime = Date.now();
-      }
-      
-      // Get points from player 1's tracker data
-      const playerPoints = playerMap.get(this.PLAYER_ID);
-      const points: Point[] = [];
-      
-      if (playerPoints) {
-        // Convert TimedPoint[] to Point[] (extract x, y from [x, y, timestamp])
-        for (const [x, y] of playerPoints) {
-          points.push({ x, y });
+      // Update player 1 data based on calibration status
+      if (this.player1Calibrated && this.player1BallId !== null) {
+        // Use assigned ball ID for player 1
+        const player1Ball = this.vision.trackedBalls.find(ball => ball.id === this.player1BallId);
+        if (player1Ball && player1Ball.x !== null && player1Ball.y !== null) {
+          this.currentPosition = { 
+            x: player1Ball.x, 
+            y: player1Ball.y 
+          };
+          
+          // Add point to tracker system for player 1
+          addPoint(this.currentPosition.x, this.currentPosition.y, this.PLAYER_ID);
+          
+          // Update timestamp for wand presence detection
+          this.lastPositionTime = Date.now();
+          
+          // Debug logging
+          if (Math.random() < 0.01) { // Log occasionally to avoid spam
+            console.log(`Player 1 using ball ID ${this.player1BallId} at position ${this.currentPosition.x}, ${this.currentPosition.y}`);
+          }
+        }
+      } else {
+        // For calibration purposes, use primary ball data
+        if (this.vision.primaryX !== null && this.vision.primaryY !== null) {
+          this.currentPosition = { 
+            x: this.vision.primaryX, 
+            y: this.vision.primaryY 
+          };
+          
+          // Add point to tracker system for player 1
+          addPoint(this.currentPosition.x, this.currentPosition.y, this.PLAYER_ID);
+          
+          // Update timestamp for wand presence detection
+          this.lastPositionTime = Date.now();
         }
       }
       
-      this.currentPoints = points;
-      
-      // Update timestamp for wand presence detection
-      if (points.length > 0) {
-        this.lastPointsTime = Date.now();
+      // Update player 2 data based on calibration status
+      if (this.player2Calibrated && this.player2BallId !== null) {
+        // Use assigned ball ID for player 2
+        const player2Ball = this.vision.trackedBalls.find(ball => ball.id === this.player2BallId);
+        if (player2Ball && player2Ball.x !== null && player2Ball.y !== null) {
+          this.wand2CurrentPosition = { 
+            x: player2Ball.x, 
+            y: player2Ball.y 
+          };
+          
+          // Add point to tracker system for player 2
+          addPoint(this.wand2CurrentPosition.x, this.wand2CurrentPosition.y, this.WAND2_PLAYER_ID);
+          
+          // Update timestamp for wand presence detection
+          this.wand2LastPositionTime = Date.now();
+          
+          // Debug logging
+          if (Math.random() < 0.01) { // Log occasionally to avoid spam
+            console.log(`Player 2 using ball ID ${this.player2BallId} at position ${this.wand2CurrentPosition.x}, ${this.wand2CurrentPosition.y}`);
+          }
+        }
+      } else {
+        // For calibration purposes, use second ball data
+        if (this.vision.trackedBalls && this.vision.trackedBalls.length > 1) {
+          const secondBall = this.vision.trackedBalls[1];
+          if (secondBall && secondBall.x !== null && secondBall.y !== null) {
+            this.wand2CurrentPosition = { 
+              x: secondBall.x, 
+              y: secondBall.y 
+            };
+            
+            // Add point to tracker system for player 2
+            addPoint(this.wand2CurrentPosition.x, this.wand2CurrentPosition.y, this.WAND2_PLAYER_ID);
+            
+            // Update timestamp for wand presence detection
+            this.wand2LastPositionTime = Date.now();
+          }
+        }
       }
+      
+      // Update points for wand 1
+      this.updateWandPoints(this.PLAYER_ID, this.currentPoints, this.lastPointsTime);
+      
+      // Update points for wand 2
+      this.updateWandPoints(this.WAND2_PLAYER_ID, this.wand2CurrentPoints, this.wand2LastPointsTime);
     } catch (error) {
       // Silently handle errors
+    }
+  }
+  
+  private updateWandPoints(playerId: number, currentPoints: Point[], lastPointsTime: number): void {
+    const playerPoints = playerMap.get(playerId);
+    const points: Point[] = [];
+    
+    if (playerPoints) {
+      // Convert TimedPoint[] to Point[] (extract x, y from [x, y, timestamp])
+      for (const [x, y] of playerPoints) {
+        points.push({ x, y });
+      }
+    }
+    
+    currentPoints.length = 0;
+    currentPoints.push(...points);
+    
+    // Update timestamp for wand presence detection
+    if (points.length > 0) {
+      if (playerId === this.PLAYER_ID) {
+        this.lastPointsTime = Date.now();
+      } else {
+        this.wand2LastPointsTime = Date.now();
+      }
     }
   }
 
@@ -219,21 +321,40 @@ class VisualizerManager {
       this.visualizerSpellTime = now;
     }
   }
+  
+  private setWand2Spell(spell: Spell): void {
+    const now = Date.now();
+    if (now - this.wand2LastSpellTime > this.SPELL_DEBOUNCE_MS) {
+      this.wand2Spell = spell;
+      this.wand2LastSpellTime = now;
+      
+      // Also set visualizer spell for player feedback
+      this.wand2VisualizerSpell = spell;
+      this.wand2VisualizerSpellTime = now;
+    }
+  }
 
   private checkSpellTimeout(): void {
-    if (this.currentSpell !== Spell.NONE) {
-      const now = Date.now();
-      if (now - this.lastSpellTime > this.SPELL_DISPLAY_DURATION_MS) {
-        this.currentSpell = Spell.NONE;
-      }
+    const now = Date.now();
+    
+    // Check wand 1 spell timeout
+    if (this.currentSpell !== Spell.NONE && now - this.lastSpellTime > this.SPELL_DISPLAY_DURATION_MS) {
+      this.currentSpell = Spell.NONE;
     }
     
-    // Check visualizer spell timeout
-    if (this.visualizerSpell !== Spell.NONE) {
-      const now = Date.now();
-      if (now - this.visualizerSpellTime > this.VISUALIZER_SPELL_DURATION_MS) {
-        this.visualizerSpell = Spell.NONE;
-      }
+    // Check wand 2 spell timeout
+    if (this.wand2Spell !== Spell.NONE && now - this.wand2LastSpellTime > this.SPELL_DISPLAY_DURATION_MS) {
+      this.wand2Spell = Spell.NONE;
+    }
+    
+    // Check wand 1 visualizer spell timeout
+    if (this.visualizerSpell !== Spell.NONE && now - this.visualizerSpellTime > this.VISUALIZER_SPELL_DURATION_MS) {
+      this.visualizerSpell = Spell.NONE;
+    }
+    
+    // Check wand 2 visualizer spell timeout
+    if (this.wand2VisualizerSpell !== Spell.NONE && now - this.wand2VisualizerSpellTime > this.VISUALIZER_SPELL_DURATION_MS) {
+      this.wand2VisualizerSpell = Spell.NONE;
     }
   }
 
@@ -261,24 +382,69 @@ class VisualizerManager {
   }
 
   /**
-   * Get the current wand points
+   * Get the current wand points (for Player 1)
    */
   public getPoints(): Point[] {
     return this.currentPoints;
   }
 
   /**
-   * Get the current wand position
+   * Get the current wand position (for Player 1)
    */
   public getCurrentPosition(): Point | null {
     return this.currentPosition;
   }
 
   /**
-   * Check if wand is currently present
+   * Get Player 1's wand points
+   */
+  public getPlayer1Points(): Point[] {
+    return this.currentPoints;
+  }
+
+  /**
+   * Get Player 1's wand position
+   */
+  public getPlayer1CurrentPosition(): Point | null {
+    return this.currentPosition;
+  }
+
+  /**
+   * Get Player 2's wand points
+   */
+  public getPlayer2Points(): Point[] {
+    return this.wand2CurrentPoints;
+  }
+
+  /**
+   * Get Player 2's wand position
+   */
+  public getPlayer2CurrentPosition(): Point | null {
+    return this.wand2CurrentPosition;
+  }
+
+  /**
+   * Check if wand is currently present (for calibration - uses raw data)
    */
   public isWandPresent(): boolean {
     if (!this.vision || !this.cameraStarted) return false;
+
+    const now = Date.now();
+    const recentPoints = now - this.lastPointsTime < this.WAND_PRESENCE_TIMEOUT_MS;
+    const recentPosition = now - this.lastPositionTime < this.WAND_PRESENCE_TIMEOUT_MS;
+    
+    return recentPoints || recentPosition;
+  }
+
+  /**
+   * Check if player 1 wand is present (for game - requires calibration)
+   */
+  public isPlayer1WandPresent(): boolean {
+    if (!this.vision || !this.cameraStarted || !this.player1Calibrated || this.player1BallId === null) return false;
+
+    // Check if the assigned ball is currently being tracked
+    const player1Ball = this.vision.trackedBalls.find(ball => ball.id === this.player1BallId);
+    if (!player1Ball || player1Ball.x === null || player1Ball.y === null) return false;
 
     const now = Date.now();
     const recentPoints = now - this.lastPointsTime < this.WAND_PRESENCE_TIMEOUT_MS;
@@ -300,6 +466,167 @@ class VisualizerManager {
     const v = (params.vMin + params.vMax) / 2;
     
     return { h, s, v };
+  }
+
+  // Wand 2 (Purple) API methods for multiplayer
+  /**
+   * Get the current detected spell for wand 2 (for game logic)
+   */
+  public getWand2CurrentSpell(): Spell {
+    return this.wand2Spell;
+  }
+
+  /**
+   * Get the visualizer spell for wand 2 (for display feedback)
+   */
+  public getWand2VisualizerSpell(): Spell {
+    const now = Date.now();
+    if (now - this.wand2VisualizerSpellTime > this.VISUALIZER_SPELL_DURATION_MS) {
+      return Spell.NONE;
+    }
+    return this.wand2VisualizerSpell;
+  }
+
+  /**
+   * Consume the current spell for wand 2 (removes from game logic but keeps in visualizer)
+   */
+  public consumeWand2Spell(): Spell {
+    const spell = this.wand2Spell;
+    this.wand2Spell = Spell.NONE;
+    return spell;
+  }
+
+  /**
+   * Get the current wand 2 position
+   */
+  public getWand2CurrentPosition(): Point | null {
+    return this.wand2CurrentPosition;
+  }
+
+  /**
+   * Get the current wand 2 points
+   */
+  public getWand2Points(): Point[] {
+    return [...this.wand2CurrentPoints];
+  }
+
+  /**
+   * Check if wand 2 is currently present (for calibration - uses raw data)
+   */
+  public isWand2Present(): boolean {
+    if (!this.vision || !this.cameraStarted) return false;
+
+    const now = Date.now();
+    const recentPoints = now - this.wand2LastPointsTime < this.WAND_PRESENCE_TIMEOUT_MS;
+    const recentPosition = now - this.wand2LastPositionTime < this.WAND_PRESENCE_TIMEOUT_MS;
+    
+    return recentPoints || recentPosition;
+  }
+
+  /**
+   * Check if player 2 wand is present (for game - requires calibration)
+   */
+  public isPlayer2WandPresent(): boolean {
+    if (!this.vision || !this.cameraStarted || !this.player2Calibrated || this.player2BallId === null) return false;
+
+    // Check if the assigned ball is currently being tracked
+    const player2Ball = this.vision.trackedBalls.find(ball => ball.id === this.player2BallId);
+    if (!player2Ball || player2Ball.x === null || player2Ball.y === null) return false;
+
+    const now = Date.now();
+    const recentPoints = now - this.wand2LastPointsTime < this.WAND_PRESENCE_TIMEOUT_MS;
+    const recentPosition = now - this.wand2LastPositionTime < this.WAND_PRESENCE_TIMEOUT_MS;
+    
+    return recentPoints || recentPosition;
+  }
+
+  // Player-specific calibration methods
+  /**
+   * Set which player is currently being calibrated
+   */
+  public setCalibrationPlayer(player: 1 | 2): void {
+    this.currentCalibrationPlayer = player;
+    console.log(`VisualizerManager: Now calibrating for Player ${player}`);
+  }
+
+  /**
+   * Mark the current calibration player as calibrated
+   */
+  public markPlayerCalibrated(): void {
+    if (this.currentCalibrationPlayer === 1) {
+      this.player1Calibrated = true;
+      // Assign player 1 to the primary ball (first detected ball)
+      if (this.vision && this.vision.trackedBalls && this.vision.trackedBalls.length > 0) {
+        this.player1BallId = this.vision.trackedBalls[0].id;
+        console.log(`VisualizerManager: Player 1 assigned to ball ID ${this.player1BallId} (primary ball)`);
+        console.log('All tracked balls:', this.vision.trackedBalls.map(b => ({ id: b.id, x: b.x, y: b.y })));
+      }
+    } else {
+      this.player2Calibrated = true;
+      // Assign player 2 to the second ball (if available)
+      if (this.vision && this.vision.trackedBalls && this.vision.trackedBalls.length > 1) {
+        this.player2BallId = this.vision.trackedBalls[1].id;
+        console.log(`VisualizerManager: Player 2 assigned to ball ID ${this.player2BallId} (second ball)`);
+        console.log('All tracked balls:', this.vision.trackedBalls.map(b => ({ id: b.id, x: b.x, y: b.y })));
+      } else {
+        console.warn('VisualizerManager: No second ball available for Player 2 calibration');
+        console.log('Available balls:', this.vision.trackedBalls.map(b => ({ id: b.id, x: b.x, y: b.y })));
+      }
+    }
+    console.log(`VisualizerManager: Player ${this.currentCalibrationPlayer} calibrated!`);
+    console.log('Current assignments:', { player1BallId: this.player1BallId, player2BallId: this.player2BallId });
+  }
+
+  /**
+   * Check if a specific player is calibrated
+   */
+  public isPlayerCalibrated(player: 1 | 2): boolean {
+    return player === 1 ? this.player1Calibrated : this.player2Calibrated;
+  }
+
+  /**
+   * Get the current calibration player
+   */
+  public getCurrentCalibrationPlayer(): 1 | 2 {
+    return this.currentCalibrationPlayer;
+  }
+
+  /**
+   * Reset calibration status for all players
+   */
+  public resetCalibration(): void {
+    this.player1Calibrated = false;
+    this.player2Calibrated = false;
+    this.currentCalibrationPlayer = 1;
+    this.player1BallId = null;
+    this.player2BallId = null;
+    console.log('VisualizerManager: Calibration reset');
+  }
+
+  /**
+   * Get debug information about tracked balls
+   */
+  public getDebugInfo(): { trackedBalls: any[], player1BallId: number | null, player2BallId: number | null } {
+    return {
+      trackedBalls: this.vision ? this.vision.trackedBalls || [] : [],
+      player1BallId: this.player1BallId,
+      player2BallId: this.player2BallId
+    };
+  }
+
+  /**
+   * Manually assign ball ID to player (for debugging)
+   */
+  public assignBallToPlayer(player: 1 | 2, ballId: number): void {
+    if (player === 1) {
+      this.player1BallId = ballId;
+      this.player1Calibrated = true;
+      console.log(`VisualizerManager: Manually assigned ball ID ${ballId} to Player 1`);
+    } else {
+      this.player2BallId = ballId;
+      this.player2Calibrated = true;
+      console.log(`VisualizerManager: Manually assigned ball ID ${ballId} to Player 2`);
+    }
   }
 
   /**
