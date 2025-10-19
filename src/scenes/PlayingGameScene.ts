@@ -234,7 +234,8 @@ export default class PlayingGameScene extends Phaser.Scene {
       GAME_SETTINGS.CANVAS_WIDTH - 100,
       50,
       '★',
-      GAME_SETTINGS.COLORS.YELLOW
+      GAME_SETTINGS.COLORS.YELLOW,
+      80 
     );
     multiplierText.setDepth(200);
     this.add.existing(multiplierText);
