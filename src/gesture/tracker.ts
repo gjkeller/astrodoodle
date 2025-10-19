@@ -7,7 +7,7 @@ export const playerMap: Map<number, TimedPoint[]> = new Map();
 const DETECTION_COOLDOWN_MS = 200;
 const MIN_POINTS_TO_DETECT = 4;
 
-export function detectAllPlayers(): { results: Record<number, ReturnType<typeof detect>[]>; elapsedMs: number } {
+function detectAllPlayers(): { results: Record<number, ReturnType<typeof detect>[]>; elapsedMs: number } {
     const start = performance.now();
     const results: Record<number, ReturnType<typeof detect>[]> = {};
     for (const [playerId, points] of playerMap.entries()) {
@@ -77,3 +77,37 @@ export function deletePlayer(playerId: number): boolean {
 		console.log('detectAllPlayers', results);
 	}, 1000);
 */  
+
+
+/**
+ * Gets the best gesture detection for each player
+ * @param threshold Optional score threshold for detection (default: 0.12)
+ * @param removeDetectedPlayers Whether to remove players with detected gestures (default: true)
+ * @returns A map of player IDs to their best detected gesture name
+ */
+export function getBestPlayerGestures(threshold: number = 0.10, removeDetectedPlayers: boolean = true): Map<number, string> {
+    const { results: allResults } = detectAllPlayers();
+    const bestGestures = new Map<number, string>();
+
+    for (const [playerKey, detections] of Object.entries(allResults)) {
+        if (!detections || detections.length === 0) {
+            continue;
+        }
+        const validDetections = detections.filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+        if (validDetections.length === 0) {
+            continue;
+        }
+        const playerId = Number(playerKey);
+        const maxResult = validDetections.reduce((best, current) => current.Score > best.Score ? current : best);
+        console.log(validDetections, maxResult);
+        
+        if (maxResult.Score > threshold) {
+            bestGestures.set(playerId, maxResult.Name);
+            if (removeDetectedPlayers) {
+                deletePlayer(playerId);
+            }
+        }
+    }
+    
+    return bestGestures;
+}

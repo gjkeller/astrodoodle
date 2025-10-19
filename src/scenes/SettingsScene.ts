@@ -54,7 +54,12 @@ export default class SettingsScene extends Phaser.Scene {
           this.scene.start('BallTracker');
         }
       },
-      { label: 'BUTTON 2' },
+      { 
+        label: 'VISUALIZER TEST',
+        callback: () => {
+          this.scene.start('VisualizerTest');
+        }
+      },
       { label: 'BUTTON 3' },
       { label: 'BUTTON 4' },
       { label: 'BUTTON 5' }
