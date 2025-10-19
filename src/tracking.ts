@@ -1,5 +1,5 @@
 // src/tracking.ts
-import { CalibrationManager } from "./tracking/calibration";
+import { CalibrationManager, SavedBall } from "./tracking/calibration";
 import { BallTrackerEngine } from "./tracking/ball-tracker";
 import type { SweepParams, TrackedBall } from "./tracking/types";
 
@@ -7,6 +7,8 @@ declare const cv: any;
 
 const MAX_BALLS = 2;
 const INITIAL_HUE_TOLERANCE = 24;
+const HUE_STORAGE_KEY = "visionTuner_hueTolerance";
+const BALL_STORAGE_KEY = "visionTuner_balls";
 export type { SweepParams, TrackedBall } from "./tracking/types";
 
 export class VisionTuner {
@@ -75,6 +77,10 @@ export class VisionTuner {
     // Load saved hue tolerance or use default
     const savedHueTolerance = this.loadHueToleranceFromStorage();
     this.calibrator = new CalibrationManager(this.W, this.H, MAX_BALLS, savedHueTolerance);
+    const savedBalls = this.loadBallsFromStorage();
+    if (savedBalls.length) {
+      this.calibrator.loadSavedBalls(savedBalls);
+    }
 
     // Wait until the OpenCV runtime is available.
     this.cvReadyPromise = new Promise<void>((resolve) => {
@@ -134,7 +140,10 @@ export class VisionTuner {
     cv.cvtColor(this.src, this.bgr, cv.COLOR_RGBA2BGR);
     cv.cvtColor(this.bgr, this.hsv, cv.COLOR_BGR2HSV);
 
-    this.calibrator.processFrame(this.hsv);
+    const autoBall = this.calibrator.processFrame(this.hsv);
+    if (autoBall) {
+      this.persistBalls();
+    }
 
     const balls = this.calibrator.getBalls();
     this.trackedBalls = this.tracker.trackBalls(this.hsv, balls);
@@ -193,9 +202,31 @@ export class VisionTuner {
     return this.calibrator.getHueTolerance();
   }
 
+  public addManualBall(params: SweepParams) {
+    const ball = this.calibrator.addManualBall(params);
+    this.persistBalls();
+    return ball;
+  }
+
+  public updateManualBall(id: number, params: SweepParams) {
+    const ball = this.calibrator.updateBall(id, params);
+    if (ball) {
+      this.persistBalls();
+    }
+    return ball;
+  }
+
+  public removeBall(id: number) {
+    const removed = this.calibrator.removeBall(id);
+    if (removed) {
+      this.persistBalls();
+    }
+    return removed;
+  }
+
   private saveHueToleranceToStorage(hueValue: number): void {
     try {
-      localStorage.setItem('visionTuner_hueTolerance', hueValue.toString());
+      localStorage.setItem(HUE_STORAGE_KEY, hueValue.toString());
     } catch (error) {
       console.warn('Failed to save hue tolerance to localStorage:', error);
     }
@@ -203,7 +234,7 @@ export class VisionTuner {
 
   private loadHueToleranceFromStorage(): number {
     try {
-      const saved = localStorage.getItem('visionTuner_hueTolerance');
+      const saved = localStorage.getItem(HUE_STORAGE_KEY);
       if (saved !== null) {
         const parsed = Number(saved);
         // Validate the range (should be reasonable values)
@@ -219,6 +250,60 @@ export class VisionTuner {
     return INITIAL_HUE_TOLERANCE;
   }
 
+  private persistBalls() {
+    try {
+      const balls = this.calibrator.getBalls();
+      const serialized = JSON.stringify(
+        balls.map<SavedBall>((ball) => ({
+          id: ball.id,
+          centerHue: ball.centerHue,
+          params: { ...ball.params }
+        }))
+      );
+      localStorage.setItem(BALL_STORAGE_KEY, serialized);
+    } catch (error) {
+      console.warn("Failed to persist ball calibrations:", error);
+    }
+  }
+
+  private loadBallsFromStorage(): SavedBall[] {
+    try {
+      const saved = localStorage.getItem(BALL_STORAGE_KEY);
+      if (!saved) return [];
+      const parsed = JSON.parse(saved);
+      if (!Array.isArray(parsed)) return [];
+      const result: SavedBall[] = [];
+      for (const entry of parsed) {
+        if (
+          typeof entry === "object" &&
+          entry !== null &&
+          typeof entry.id === "number" &&
+          typeof entry.centerHue === "number" &&
+          entry.params &&
+          typeof entry.params === "object"
+        ) {
+          result.push({
+            id: entry.id,
+            centerHue: entry.centerHue,
+            params: {
+              hMin: Number(entry.params.hMin ?? 0),
+              hMax: Number(entry.params.hMax ?? 0),
+              sMin: Number(entry.params.sMin ?? 0),
+              sMax: Number(entry.params.sMax ?? 0),
+              vMin: Number(entry.params.vMin ?? 0),
+              vMax: Number(entry.params.vMax ?? 0),
+              wrapHue: Boolean(entry.params.wrapHue)
+            }
+          });
+        }
+      }
+      return result;
+    } catch (error) {
+      console.warn("Failed to load ball calibrations from localStorage:", error);
+      return [];
+    }
+  }
+
   public clearBalls() {
     this.calibrator.clearBalls();
     this.trackedBalls = [];
@@ -228,6 +313,11 @@ export class VisionTuner {
     this.primaryParams = null;
     if (this.tracker) {
       this.tracker.getMask().setTo(new cv.Scalar(0));
+    }
+    try {
+      localStorage.removeItem(BALL_STORAGE_KEY);
+    } catch (error) {
+      console.warn("Failed to clear ball calibration storage:", error);
     }
   }
 }
