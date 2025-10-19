@@ -1,205 +1,23 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-
 <head>
-  <link rel="icon" type="image/png" href="/favicon.png" />
-  <link rel="stylesheet" href="/style.css">
-
-  <!-- Preload fonts to prevent loading issues -->
-  <link rel="preload" href="/PressStart2P-Regular.ttf" as="font" type="font/ttf" crossorigin>
-  <link rel="preload" href="/Neometric-Regular.otf" as="font" type="font/otf" crossorigin>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Rocket Racer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Phaser (if you don't use bundler for phaser, else remove this) -->
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.js"></script>
+  <!-- OpenCV.js -->
   <script async src="https://docs.opencv.org/4.x/opencv.js"></script>
   <style>
-    :root {
-      color-scheme: dark;
-    }
-
-    * {
-      box-sizing: border-box;
-    }
-
-    body {
-      margin: 0;
-      background: #050505;
-      color: #f0f3ff;
-      font-family: "Inter", "Segoe UI", system-ui, sans-serif;
-    }
-
-    #controls {
-      position: fixed;
-      top: 18px;
-      left: 18px;
-      width: 280px;
-      padding: 18px 20px;
-      border-radius: 16px;
-      border: 1px solid rgba(255, 255, 255, 0.07);
-      background: rgba(9, 12, 22, 0.85);
-      backdrop-filter: blur(18px);
-      box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
-    }
-
-    #controls h1 {
-      margin: 0 0 12px;
-      font-size: 17px;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: #7da9ff;
-    }
-
-    #status {
-      margin: 0 0 14px;
-      font-size: 13px;
-      line-height: 1.5;
-      color: #b7c5ff;
-    }
-
-    #stats {
-      display: grid;
-      gap: 10px;
-      margin-bottom: 14px;
-      padding: 10px 12px;
-      background: rgba(255, 255, 255, 0.04);
-      border-radius: 12px;
-      border: 1px solid rgba(255, 255, 255, 0.06);
-    }
-
-    .slider-row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 10px;
-    }
-
-    .slider-row label {
-      width: 64px;
-      font-size: 12px;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: #8f9bb9;
-    }
-
-    .slider-row input[type=range] {
-      flex: 1;
-    }
-
-    .slider-row span {
-      width: 46px;
-      text-align: right;
-      font-variant-numeric: tabular-nums;
-      color: #e8f1ff;
-    }
-
-    .stat-label {
-      font-size: 12px;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: #8f9bb9;
-      margin-bottom: 2px;
-      display: block;
-    }
-
-    .stat-value {
-      font-variant-numeric: tabular-nums;
-      font-size: 15px;
-      color: #e8f1ff;
-    }
-
-    #controls button {
-      width: 100%;
-      padding: 10px 14px;
-      margin-top: 4px;
-      border: none;
-      border-radius: 10px;
-      background: linear-gradient(135deg, #2f7bff, #58c6ff);
-      color: #fff;
-      font-weight: 600;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      cursor: pointer;
-      transition: transform 0.2s ease, opacity 0.2s ease;
-    }
-
-    #controls button[disabled] {
-      opacity: 0.6;
-      cursor: default;
-      transform: none;
-    }
-
-    #controls button:not([disabled]):hover {
-      transform: translateY(-1px);
-    }
-
-    #game {
-      width: 100vw;
-      height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
+    body { margin: 0; background:#0e0e0e; color:#eee; font-family: system-ui, sans-serif; }
+    #game-container { width: 100vw; height: 100vh; }
   </style>
 </head>
-
 <body>
-  <div id="controls">
-    <h1>Ball Tracker</h1>
-    <p id="status">Loading OpenCV…</p>
-    <div id="stats">
-      <div>
-        <span class="stat-label">Position</span>
-        <span class="stat-value" id="posDisplay">–, –</span>
-      </div>
-      <div>
-        <span class="stat-label">Best HSV</span>
-        <span class="stat-value" id="paramDisplay">–</span>
-      </div>
-    </div>
-    <div class="slider-row">
-      <label for="slider-hMin">H Min</label>
-      <input id="slider-hMin" type="range" min="0" max="179" value="0">
-      <span id="value-hMin">0</span>
-    </div>
-    <div class="slider-row">
-      <label for="slider-hMax">H Max</label>
-      <input id="slider-hMax" type="range" min="0" max="179" value="179">
-      <span id="value-hMax">179</span>
-    </div>
-    <div class="slider-row">
-      <label for="slider-sMin">S Min</label>
-      <input id="slider-sMin" type="range" min="0" max="255" value="0">
-      <span id="value-sMin">0</span>
-    </div>
-    <div class="slider-row">
-      <label for="slider-sMax">S Max</label>
-      <input id="slider-sMax" type="range" min="0" max="255" value="255">
-      <span id="value-sMax">255</span>
-    </div>
-    <div class="slider-row">
-      <label for="slider-vMin">V Min</label>
-      <input id="slider-vMin" type="range" min="0" max="255" value="0">
-      <span id="value-vMin">0</span>
-    </div>
-    <div class="slider-row">
-      <label for="slider-vMax">V Max</label>
-      <input id="slider-vMax" type="range" min="0" max="255" value="255">
-      <span id="value-vMax">255</span>
-    </div>
-    <div class="slider-row">
-      <label for="slider-bright">Bright</label>
-      <input id="slider-bright" type="range" min="-100" max="100" value="0">
-      <span id="value-bright">0</span>
-    </div>
-    <button id="startBtn">Start Camera</button>
-  </div>
+  <div id="game-container"></div>
 
-  <canvas id="debugPlayerMap" width="640" height="480"
-    style="display:block;margin:16px auto;border:2px solid #444;background:#222;"></canvas>
-
-  <div id="game"></div>
-
+  <!-- Your bundle should load main.ts compiled output. If using Vite/Webpack/Rollup, this is injected automatically. -->
+  <!-- If you need direct scripts, include them below after bundling. -->
   <script type="module" src="/src/main.ts"></script>
 </body>
-
 </html>

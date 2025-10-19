@@ -1,5 +1,6 @@
 
 import { VisionTuner, SweepParams } from "../tracking";
+import { addPoint } from "../gesture/tracker";
 
 export default class SweepScene extends Phaser.Scene {
   private vis!: VisionTuner;
@@ -218,7 +219,4 @@ export default class SweepScene extends Phaser.Scene {
 }
 
 
-function addPoint(x: number, y: number, arg2: number) {
-    throw new Error("Function not implemented.");
-}
 
