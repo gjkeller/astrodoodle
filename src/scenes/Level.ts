@@ -19,7 +19,7 @@ export default class Level extends Phaser.Scene {
 	editorCreate(): void {
 
 		// fufuSuperDino
-		this.add.image(640, 257, "FufuSuperDino");
+		this.add.image(600, 267, "FufuSuperDino");
 
 		// text
 		const text = this.add.text(640, 458, "", {});

@@ -19,8 +19,8 @@
             "texture": {
                 "key": "FufuSuperDino"
             },
-            "x": 640,
-            "y": 257
+            "x": 600,
+            "y": 267
         },
         {
             "type": "Text",

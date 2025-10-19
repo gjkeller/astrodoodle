@@ -1,93 +1,167 @@
-# Phaser Editor Vite TypeScript Template
+# Rocket Racer
 
-This is a Phaser Editor v4 project template that uses Vite TypeScript for bundling. It supports hot-reloading for quick development workflow and includes scripts to generate production-ready builds.
+A Phaser 3 TypeScript vertical split-screen two-player racing game prototype.
 
-## What is Phaser Editor?
+## Quick Start
 
-Phaser Editor enables you to visually create Phaser games. Instead of entering numbers in your code to position Game Objects, you can drag and drop them into place, tweak their animations, adjust their physics bodies, enable special effects, and more. It's quicker and faster for both artists and developers alike and publishes pure Phaser code.
+```bash
+# Install dependencies
+npm install
 
-See more at [phaser.io](https://phaser.io/editor)
+# Start development server
+npm run dev
 
-## Requirements
+# Build for production
+npm run build
+```
 
-[Node.js](https://nodejs.org) is required to install dependencies and run scripts via `npm`.
+## Game Overview
 
-An active subscription to Phaser Editor is required to load and use this template within it.
+Rocket Racer is a gesture-based racing game where two players compete by drawing symbols to match asteroid requirements. The game features:
 
-## Available Commands
+- **Split-screen gameplay** - Each player has their own side of the screen
+- **Gesture recognition** - Players draw symbols to match asteroid requirements
+- **Progress racing** - First player to reach the goal wins
+- **Multiplier system** - Correct matches increase score multiplier
+- **HUD elements** - Score, multiplier stars, and gesture minimap
 
-| Command | Description |
-|---------|-------------|
-| `npm install`   | Install project dependencies |
-| `npm start`     | Launch a development web server |
-| `npm run build` | Create a production build in the `dist` folder |
+## Assets Checklist
 
-## Writing Code
+Before running the game, you need to add these files to `/src/assets/`:
 
-After cloning the repo, run `npm install` from your project directory.
+### Required Assets
+- `bg_stars.png` - Starry background image
+- `divider.png` - Vertical center divider bar
+- `glyph_orange.png` - Player 1 ship/glyph (orange)
+- `glyph_purple.png` - Player 2 ship/glyph (purple)
+- `press2p.png` - Press Start 2P bitmap font atlas
+- `press2p.fnt` - Font descriptor file (provided)
+- `asteroid.png` - Asteroid sprite
+- `icon_star.png` - Star icon for multiplier
 
-To start the local development server use `npm run dev`.
+### Optional Assets
+- `fx_nitro.wav` - Nitro boost sound
+- `fx_hit.wav` - Hit/correct match sound
+- `fx_miss.wav` - Miss/incorrect match sound
 
-## Deploying to Production
+**Note**: If any required assets are missing, the game will display a blocking overlay with instructions.
 
-To create a production build use the command `npm run build`.
+## Keyboard Controls (Demo Mode)
 
-This will take your game code and build it into a single bundle, ready for deployment. This bundle is saved to the `dist` folder. The deployment script will also copy any assets your project imported, or stored in the public assets folder.
+### Player 1 (Left Side)
+- **WASD** - Draw gesture strokes (W=up, A=left, S=down, D=right)
+- **Q/E** - Lane change gestures (left/right)
+- **Space** - Submit current symbol (cycles through V → II → — → ★)
 
-To deploy your game, upload *all* of the contents of the `dist` folder to a public-facing web server.
+### Player 2 (Right Side)
+- **Arrow Keys** - Draw gesture strokes (↑=up, ←=left, ↓=down, →=right)
+- **O/P** - Lane change gestures (left/right)
+- **Enter** - Submit current symbol (cycles through V → II → — → ★)
 
-## Phaser Editor considerations
+### General
+- **Enter** (in Select Players) - Toggle both players ready for quick demo
 
-### Excluding files from the project
+## Game Flow
 
-You don't want to add every file in this template to your Phaser Editor project. For example, the whole of `node_modules` can be excluded.
+1. **Menu Scene** - Title screen with PLAY, LEADERBOARD, SETTINGS buttons
+2. **Select Players** - Ready up both players, START button enabled when both ready
+3. **Playing Game** - Main gameplay with HUD, progress bar, and asteroid matching
+4. **Leaderboard** - Coming soon (stub)
 
-The `skip` section in the `phasereditor2d.config.json` file contains the folder and files to exclude from the project.
+## Gameplay Mechanics
 
-[Learn more about resource filtering in Phaser Editor](https://phaser.io/editor/docs/misc/resources-filtering)
+### Symbol Matching
+- Asteroids display requirement symbols: V, II, —, ★
+- Players submit symbols by pressing Space (P1) or Enter (P2)
+- Correct matches: +10 points × multiplier, multiplier +1 (max 4), progress +2%
+- Incorrect matches: multiplier resets to 1, flash red
 
-### Asset Pack
+### Win Condition
+- First player to reach 100% progress wins
+- Game returns to menu after 3-second win display
 
-Phaser has the ability to load what are known as 'asset packs'. These are JSON files that describe all of the content that your game needs to load, such as images, audio, and fonts. Phaser Editor will generate and use asset packs intensively and tools such as the Scene Editor depend upon the information stored in the asset pack files.
+## Technical Architecture
 
-You can have multiple asset packs per project, which is the recommended practice for larger games, allowing you to load only the pack of assets the game requires at that specific point.
+### Core Modules
+- `store.ts` - Game state management (scores, progress, ready flags)
+- `events.ts` - Typed event bus for scene communication
+- `settings.ts` - Game constants and configuration
+- `input.ts` - Keyboard input simulation for gestures
 
-In this template, we have pre-configured two types of asset packs: `boot-asset-pack.json` and `preload-asset-pack.json`.
+### UI Components
+- `button.ts` - Pixel-style button with hover/disabled states
+- `hud.ts` - Player HUD with score, multiplier, and minimap
+- `minimap.ts` - Gesture stroke visualization
+- `progressBar.ts` - Center dual progress bar with player markers
+- `bitmapText.ts` - Press Start 2P font helper
 
-The `boot-asset-pack.json` file is used to load assets when the game first boots. Typically, you would store a small selection of initial assets in here, such as a loading screen image and progress bar.
+### Gameplay
+- `asteroid.ts` - Asteroid prefab with requirement labels
+- `matcher.ts` - Symbol matching logic
 
-The `preload-asset-pack.json` in this template contains the rest of the assets the game needs. You are free to create additional packs as required, but for the sake of simplicity, this template has been configured with just these two packs.
+### Scenes
+- `BootScene` - Asset validation and loading
+- `MenuScene` - Main menu with navigation
+- `SelectPlayersScene` - Player ready state management
+- `PlayingGameScene` - Main gameplay loop
+- `LeaderboardScene` - Coming soon stub
 
-[Learn more about Asset Pack loading in Phaser](https://newdocs.phaser.io/docs/3.80.0/Phaser.Loader.LoaderPlugin#pack)
+## Next Steps
 
-The command `npm run build` also includes the execution of the `phaser-asset-pack-hashing` tool. It implements a "cache-busting" strategy and modifies the URLs in the asset packs and other assets in the `public` folder.
+### MediaPipe Integration
+The game is designed to integrate with MediaPipe for real gesture recognition:
 
-### Scene, User Components, and ScriptNode configuration
+1. **Replace placeholder** in `vision/gestures.ts`
+2. **Implement hand tracking** using MediaPipe Hands
+3. **Add stroke segmentation** to detect drawing gestures
+4. **Train symbol classifier** to recognize V, II, —, ★ symbols
+5. **Wire gesture feed** to replace keyboard simulation
 
-The Scenes, User Components, and ScriptNodes are configured to compile to TypeScript ES modules. Also, the compilers auto-import the classes used in the generated code.
+### Asteroid Spawning System
+Currently asteroids are placed statically. Future implementation should include:
 
-### ScriptNodes
+1. **Spawn manager** in `gameplay/spawner.ts`
+2. **Movement patterns** for asteroids
+3. **Difficulty scaling** based on progress
+4. **Power-ups and special asteroids**
 
-The project requires the following script libraries:
+### Audio System
+Add sound effects and background music:
 
-* [@phaserjs/editor-scripts-core](https://www.npmjs.com/package/@phaserjs/editor-scripts-core)
-* [@phaserjs/editor-scripts-simple-animations](https://www.npmjs.com/package/@phaserjs/editor-scripts-simple-animations)
+1. **Audio manager** for sound effects
+2. **Background music** with dynamic mixing
+3. **Spatial audio** for left/right player feedback
 
-You can add your script nodes to the `src/script-nodes` folder.
+### Multiplayer
+Extend to support online multiplayer:
 
-## Join the Phaser Community!
+1. **WebSocket integration** for real-time sync
+2. **Room system** for matchmaking
+3. **Spectator mode** for watching games
 
-We love to see what developers like you create with Phaser! It really motivates us to keep improving. So please join our community and show off your work 😄
+## Development Notes
 
-**Visit:** The [Phaser website](https://phaser.io) and follow on [Phaser Twitter](https://twitter.com/phaser_)<br />
-**Play:** Some of the amazing games [#madewithphaser](https://twitter.com/search?q=%23madewithphaser&src=typed_query&f=live)<br />
-**Learn:** [API Docs](https://newdocs.phaser.io), [Support Forum](https://phaser.discourse.group/) and [StackOverflow](https://stackoverflow.com/questions/tagged/phaser-framework)<br />
-**Discord:** Join us on [Discord](https://discord.gg/phaser)<br />
-**Code:** 2000+ [Examples](https://labs.phaser.io)<br />
-**Read:** The [Phaser World](https://phaser.io/community/newsletter) Newsletter<br />
+- Built with **Phaser 3.80.1** and **TypeScript**
+- Uses **Vite** for fast development and building
+- **Strict TypeScript** configuration for type safety
+- **ESLint + Prettier** for code quality
+- **Barrel exports** for clean imports
+- **Event-driven architecture** for loose coupling
 
-Created by [Phaser Studio](mailto:support@phaser.io). Powered by coffee, anime, pixels and love.
+## File Structure
 
-The Phaser logo and characters are &copy; 2011 - 2024 Phaser Studio Inc.
+```
+src/
+├── assets/           # Game assets (images, audio, fonts)
+├── core/            # Core game systems
+├── ui/              # UI components
+├── gameplay/        # Game logic and objects
+├── scenes/          # Phaser scenes
+├── vision/          # Gesture recognition (placeholder)
+├── types/           # TypeScript type definitions
+└── main.ts          # Game entry point
+```
 
-All rights reserved.
+## License
+
+MIT License - feel free to use this code for your own projects!

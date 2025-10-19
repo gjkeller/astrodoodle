@@ -1,3 +1,19 @@
+@font-face {
+    font-family: 'Press Start 2P';
+    src: url('/PressStart2P-Regular.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+    font-display: block;
+}
+
+@font-face {
+    font-family: 'Neometric';
+    src: url('/Neometric-Regular.otf') format('opentype');
+    font-weight: normal;
+    font-style: normal;
+    font-display: block;
+}
+
 body {
     margin: 0;
     padding: 0;

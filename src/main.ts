@@ -1,37 +1,41 @@
 import Phaser from "phaser";
-import Level from "./scenes/Level";
-import Preload from "./scenes/Preload";
-
-class Boot extends Phaser.Scene {
-
-    constructor() {
-        super("Boot");
-    }
-
-    preload() {
-
-        this.load.pack("pack", "assets/preload-asset-pack.json");
-    }
-
-    create() {
-
-       this.scene.start("Preload");
-    }
-}
+import BootScene from "./scenes/BootScene";
+import MenuScene from "./scenes/MenuScene";
+import SelectPlayersScene from "./scenes/SelectPlayersScene";
+import PlayingGameScene from "./scenes/PlayingGameScene";
+import LeaderboardScene from "./scenes/LeaderboardScene";
+import SettingsScene from "./scenes/SettingsScene";
+import { eventBus } from "./core/events";
 
 window.addEventListener('load', function () {
+	console.log('Starting Rocket Racer game...');
+	
+	// Check if game container exists
+	const gameContainer = document.getElementById('game-container');
+	if (!gameContainer) {
+		console.error('Game container not found!');
+		return;
+	}
+	
+	console.log('Game container found, creating Phaser game...');
 	
 	const game = new Phaser.Game({
 		width: 1280,
 		height: 720,
-		backgroundColor: "#2f2f2f",
+		backgroundColor: "#000000", // Black background
 		parent: "game-container",
 		scale: {
 			mode: Phaser.Scale.ScaleModes.FIT,
 			autoCenter: Phaser.Scale.Center.CENTER_BOTH
 		},
-		scene: [Boot, Preload, Level]
+		scene: [BootScene, MenuScene, SelectPlayersScene, PlayingGameScene, LeaderboardScene, SettingsScene]
 	});
 
+
+	// Attach event bus to game instance
+	(game as any).eventBus = eventBus;
+
+	console.log('Game created');
+	console.log('Starting Boot scene...');
 	game.scene.start("Boot");
 });
