@@ -4,7 +4,7 @@ export type TimedPoint = [number, number, number];
 
 export const playerMap: Map<number, TimedPoint[]> = new Map();
 
-const DETECTION_COOLDOWN_MS = 200;
+const DETECTION_COOLDOWN_MS = 400;
 const MIN_POINTS_TO_DETECT = 4;
 
 function detectAllPlayers(): { results: Record<number, ReturnType<typeof detect>[]>; elapsedMs: number } {
@@ -88,14 +88,21 @@ export function resetTracker(): void {
 
 
 /**
- * Gets the best gesture detection for each player
- * @param threshold Optional score threshold for detection (default: 0.12)
+ * Gets the best gesture detection for each player with fixed thresholds per gesture
  * @param removeDetectedPlayers Whether to remove players with detected gestures (default: true)
  * @returns A map of player IDs to their best detected gesture name
  */
-export function getBestPlayerGestures(threshold: number = 0.10, removeDetectedPlayers: boolean = true): Map<number, string> {
+export function getBestPlayerGestures(removeDetectedPlayers: boolean = true): Map<number, string> {
     const { results: allResults } = detectAllPlayers();
     const bestGestures = new Map<number, string>();
+
+    // Fixed thresholds for each gesture type
+    const gestureThresholds: Record<string, number> = {
+        'five-point star': 0.2,
+        'triangle': 0.2,
+        'null': 0.15,
+        'arrowhead': 0.25
+    };
 
     for (const [playerKey, detections] of Object.entries(allResults)) {
         if (!detections || detections.length === 0) {
@@ -106,14 +113,28 @@ export function getBestPlayerGestures(threshold: number = 0.10, removeDetectedPl
             continue;
         }
         const playerId = Number(playerKey);
-        const maxResult = validDetections.reduce((best, current) => current.Score > best.Score ? current : best);
-        console.log(validDetections, maxResult);
         
-        if (maxResult.Score > threshold) {
+        console.log(`[Player ${playerId}] BEFORE filtering:`, validDetections.map(d => `${d.Name}: ${d.Score.toFixed(3)}`));
+        
+        // Filter detections based on gesture-specific thresholds
+        const filteredDetections = validDetections.filter(detection => {
+            const threshold = gestureThresholds[detection.Name] || 0.12; // fallback threshold
+            return detection.Score > threshold;
+        });
+        
+        console.log(`[Player ${playerId}] AFTER filtering:`, filteredDetections.map(d => `${d.Name}: ${d.Score.toFixed(3)}`));
+        
+        if (filteredDetections.length > 0) {
+            // Get the best detection after filtering
+            const maxResult = filteredDetections.reduce((best, current) => current.Score > best.Score ? current : best);
+            console.log(`[Player ${playerId}] SELECTED:`, `${maxResult.Name}: ${maxResult.Score.toFixed(3)}`);
+            
             bestGestures.set(playerId, maxResult.Name);
             if (removeDetectedPlayers) {
                 deletePlayer(playerId);
             }
+        } else {
+            console.log(`[Player ${playerId}] No gestures passed threshold filters`);
         }
     }
     
