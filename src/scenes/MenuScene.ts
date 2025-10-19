@@ -19,7 +19,7 @@ export default class MenuScene extends Phaser.Scene {
  
     
     // Title - "ROCKET RACER" with exact Figma specs and proper Press Start 2P font
-    this.add.text(640, 162, 'ROCKET RACER', {
+    this.add.text(640, 162, 'AstroDoodle', {
       fontFamily: '"Press Start 2P", monospace',
       fontSize: '76px',
       color: '#edeeff',

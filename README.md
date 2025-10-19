@@ -1,4 +1,4 @@
-# Rocket Racer
+# AstroDoodle
 
 A Phaser 3 TypeScript vertical split-screen two-player racing game prototype.
 
@@ -17,7 +17,7 @@ npm run build
 
 ## Game Overview
 
-Rocket Racer is a gesture-based racing game where two players compete by drawing symbols to match asteroid requirements. The game features:
+AstroDoodle is a gesture-based racing game where two players compete by drawing symbols to match asteroid requirements. The game features:
 
 - **Split-screen gameplay** - Each player has their own side of the screen
 - **Gesture recognition** - Players draw symbols to match asteroid requirements

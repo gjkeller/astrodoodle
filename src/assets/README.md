@@ -1,4 +1,4 @@
-# Assets Required for Rocket Racer
+# Assets Required for AstroDoodle
 
 This directory should contain the following image files for the game to work properly:
 
