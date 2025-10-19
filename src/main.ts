@@ -41,43 +41,46 @@ setInterval(() => {
 		}
 	}
 }, 100);
-// src/main.ts
 import Phaser from "phaser";
-import { VisionTuner, TunerParams } from "./tracking";
-import { addPoint } from "./gesture/tracker";
+import { VisionTuner } from "./tracking";
 
-class TunerScene extends Phaser.Scene {
-	private vis!: VisionTuner;
-	private rawImage!: Phaser.GameObjects.Image;
-	private maskImage!: Phaser.GameObjects.Image;
-	private gfx!: Phaser.GameObjects.Graphics;
-	private posText!: Phaser.GameObjects.Text;
-	private domPosEl?: HTMLElement;
-	private lastFpsCheck: number = performance.now();
-	private frameCount: number = 0;
+class SweepScene extends Phaser.Scene {
+  private vis!: VisionTuner;
+  private rawImage!: Phaser.GameObjects.Image;
+  private maskImage!: Phaser.GameObjects.Image;
+  private overlay!: Phaser.GameObjects.Graphics;
+  private posText!: Phaser.GameObjects.Text;
+  private hsvText!: Phaser.GameObjects.Text;
 
-	constructor() { super("TunerScene"); }
+  private domStatus?: HTMLElement;
+  private domPos?: HTMLElement;
+  private domParams?: HTMLElement;
+  private cameraStarted = false;
 
-	preload() { }
+  constructor() {
+    super("SweepScene");
+  }
 
-	async create() {
-		const W = 640, H = 480;
-		const gap = 16;
+  preload() {}
+
+  async create() {
+    const W = 640;
+    const H = 480;
+    const gap = 16;
 
 		// Vision Tuner
 		this.vis = new VisionTuner(W, H);
+    this.vis = new VisionTuner(W, H);
 
-		// Create Phaser textures from canvases
-		this.textures.addCanvas("raw", this.vis.rawCanvas);
-		this.textures.addCanvas("mask", this.vis.maskCanvas);
+    this.textures.addCanvas("raw", this.vis.rawCanvas);
+    this.textures.addCanvas("mask", this.vis.maskCanvas);
 
 		this.rawImage = this.add.image(0, 0, "raw").setOrigin(0, 0);
 		void this.rawImage;
 		this.maskImage = this.add.image(W + gap, 0, "mask").setOrigin(0, 0);
 		void this.maskImage;
 
-		// Resize the game to fit both views side-by-side
-		this.scale.resize(W * 2 + gap, H);
+    this.scale.resize(W * 2 + gap, H);
 
 		// Overlay graphics (crosshair)
 		this.gfx = this.add.graphics();
@@ -90,12 +93,31 @@ class TunerScene extends Phaser.Scene {
 			startBtn.disabled = true;
 			startBtn.textContent = "Loading OpenCV…";
 		}
+    this.overlay = this.add.graphics();
+    this.posText = this.add.text(12, 12, "x: –, y: –", { color: "#ffffff", fontSize: "18px" });
+    this.hsvText = this.add.text(12, 36, "HSV: –, –, –", { color: "#8bd9ff", fontSize: "16px" });
+
+    this.domStatus = document.getElementById("status") ?? undefined;
+    this.domPos = document.getElementById("posDisplay") ?? undefined;
+    this.domParams = document.getElementById("paramDisplay") ?? undefined;
+
+    const startBtn = document.getElementById("startBtn") as HTMLButtonElement | null;
+    if (startBtn) {
+      startBtn.disabled = true;
+      startBtn.textContent = "Loading OpenCV…";
+    }
 
 		this.vis.whenReady().then(() => {
 			if (!startBtn) return;
 			startBtn.disabled = false;
 			startBtn.textContent = "Start Camera";
 		});
+    this.vis.whenReady().then(() => {
+      if (!startBtn) return;
+      startBtn.disabled = false;
+      startBtn.textContent = "Start Camera";
+      if (this.domStatus) this.domStatus.textContent = "Ready. Allow camera access and click start.";
+    });
 
 		startBtn?.addEventListener("click", async () => {
 			await this.vis.startCamera();
@@ -121,6 +143,17 @@ class TunerScene extends Phaser.Scene {
 		bind("vMin", "vMin"); bind("vMax", "vMax");
 		bind("bright", "bright");
 	}
+    startBtn?.addEventListener("click", async () => {
+      await this.vis.startCamera();
+      this.cameraStarted = true;
+      if (startBtn) {
+        startBtn.disabled = true;
+        startBtn.textContent = "Camera Running";
+      }
+      if (this.domStatus) this.domStatus.textContent = "Cover the camera with the glowing ball to auto-calibrate.";
+    });
+
+  }
 
 	update() {
 		// Pump vision and track FPS only when a frame was processed
@@ -135,6 +168,8 @@ class TunerScene extends Phaser.Scene {
 				this.frameCount = 0;
 			}
 		}
+  update() {
+    this.vis.update();
 
 		// Refresh Phaser textures from canvases
 		const rawTex = this.textures.get("raw") as Phaser.Textures.CanvasTexture;
@@ -143,35 +178,61 @@ class TunerScene extends Phaser.Scene {
 		maskTex.context.drawImage(this.vis.maskCanvas, 0, 0);
 		rawTex.refresh();
 		maskTex.refresh();
+    const rawTex = this.textures.get("raw") as Phaser.Textures.CanvasTexture;
+    const maskTex = this.textures.get("mask") as Phaser.Textures.CanvasTexture;
+    rawTex.context.drawImage(this.vis.rawCanvas, 0, 0);
+    maskTex.context.drawImage(this.vis.maskCanvas, 0, 0);
+    rawTex.refresh();
+    maskTex.refresh();
 
 		// Draw overlay crosshair on left view
 		this.gfx.clear();
 		if (this.vis.x !== null && this.vis.y !== null) {
 			const x = this.vis.x;
 			const y = this.vis.y;
+    this.overlay.clear();
+    if (this.vis.x !== null && this.vis.y !== null && this.vis.radius !== null) {
+      const x = this.vis.x;
+      const y = this.vis.y;
+      const radius = Math.max(10, this.vis.radius);
 
-			this.gfx.lineStyle(2, 0x00ff73, 1);
-			this.gfx.strokeCircle(x, y, 12);
-			this.gfx.lineBetween(x - 18, y, x + 18, y);
-			this.gfx.lineBetween(x, y - 18, x, y + 18);
-			const text = `x: ${Math.round(x)}, y: ${Math.round(y)}`;
-			this.posText.setText(text);
-			if (this.domPosEl) this.domPosEl.textContent = text;
+      this.overlay.lineStyle(2, 0x00ff73, 1);
+      this.overlay.strokeCircle(x, y, radius + 6);
+      this.overlay.lineBetween(x - 20, y, x + 20, y);
+      this.overlay.lineBetween(x, y - 20, x, y + 20);
 
-			// Add point to tracker for player 1
-			addPoint(x, y, 1);
-		} else {
-			this.posText.setText("x: –, y: –");
-			if (this.domPosEl) this.domPosEl.textContent = "x: –, y: –";
-		}
-	}
+      const message = `x: ${Math.round(x)}, y: ${Math.round(y)}`;
+      this.posText.setText(message);
+      if (this.domPos) this.domPos.textContent = message;
+    } else {
+      this.posText.setText("x: –, y: –");
+      if (this.domPos) this.domPos.textContent = "–, –";
+    }
+
+    const activeParams = this.vis.bestParams || this.vis.lockedParams;
+    if (activeParams) {
+      const p = activeParams;
+      const text = `HSV: H[${p.hMin}-${p.hMax}], S[${p.sMin}-${p.sMax}], V[${p.vMin}-${p.vMax}]`;
+      this.hsvText.setText(text);
+      if (this.domParams) this.domParams.textContent = text;
+    } else {
+      this.hsvText.setText("HSV: –, –, –");
+      if (this.domParams) this.domParams.textContent = "–";
+    }
+
+    if (this.domStatus && this.cameraStarted) {
+      this.domStatus.textContent = this.vis.isLocked()
+        ? "Tracking locked. Cover the camera again to refresh."
+        : "Waiting for auto-calibration… cover the camera with the glowing ball.";
+    }
+  }
 }
 
-new Phaser.Game({
-	type: Phaser.AUTO,
-	parent: "game",
-	backgroundColor: "#000000",
-	width: 640 * 2 + 16, // left(raw) + gap + right(mask)
-	height: 480,
-	scene: [TunerScene]
+const game = new Phaser.Game({
+  type: Phaser.AUTO,
+  parent: "game",
+  backgroundColor: "#000000",
+  width: 640 * 2 + 16,
+  height: 480,
+  scene: [SweepScene]
 });
