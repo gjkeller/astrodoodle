@@ -21,6 +21,10 @@ export default class PlayingGameScene extends Phaser.Scene {
   private isSpawningActive: boolean = false;
   private resultsOverlay: Phaser.GameObjects.Container | null = null;
   
+  // Countdown
+  private countdownText: Phaser.GameObjects.Text | Phaser.GameObjects.BitmapText | null = null;
+  private countdownTimer: Phaser.Time.TimerEvent | null = null;
+  
   // Difficulty progression
   private spawnTimer: Phaser.Time.TimerEvent | null = null;
   private currentSpawnRate: number = 2000; // Start with 2 seconds
@@ -39,8 +43,22 @@ export default class PlayingGameScene extends Phaser.Scene {
     this.setupInput();
     this.setupEventListeners();
     
-    // Don't start the game immediately - wait for user input
-    console.log('PlayingGameScene created, waiting for game start...');
+    // Start countdown to show game environment during countdown
+    this.startCountdown();
+    console.log('PlayingGameScene created, starting countdown...');
+  }
+  
+  destroy(): void {
+    // Clean up countdown if still running
+    if (this.countdownTimer) {
+      this.countdownTimer.destroy();
+      this.countdownTimer = null;
+    }
+    
+    if (this.countdownText) {
+      this.countdownText.destroy();
+      this.countdownText = null;
+    }
   }
   
   private createBackground(): void {
@@ -84,20 +102,6 @@ export default class PlayingGameScene extends Phaser.Scene {
       40
     );
     this.progressBar.setDepth(50);
-    
-    // Add "Press SPACE to start" message
-    const startMessage = BitmapTextHelper.createHUDText(
-      this,
-      GAME_SETTINGS.CANVAS_WIDTH / 2,
-      GAME_SETTINGS.CANVAS_HEIGHT / 2,
-      'PRESS SPACE TO START',
-      GAME_SETTINGS.COLORS.WHITE
-    );
-    startMessage.setDepth(200);
-    this.add.existing(startMessage);
-    
-    // Store reference to hide it when game starts
-    (this as any).startMessage = startMessage;
   }
   
   private createStaticShip(): void {
@@ -154,15 +158,54 @@ export default class PlayingGameScene extends Phaser.Scene {
     this.minimap = new Minimap(this, 100, GAME_SETTINGS.CANVAS_HEIGHT - 140);
   }
   
+  private startCountdown(): void {
+    // Create countdown text overlay
+    this.countdownText = BitmapTextHelper.createTitleText(
+      this,
+      GAME_SETTINGS.CANVAS_WIDTH / 2,
+      GAME_SETTINGS.CANVAS_HEIGHT / 2,
+      '3',
+      GAME_SETTINGS.COLORS.WHITE
+    );
+    this.countdownText.setDepth(1000); // High depth to appear above everything
+    
+    // Start countdown timer
+    let count = 3;
+    this.countdownTimer = this.time.addEvent({
+      delay: 1000,
+      callback: () => {
+        count--;
+        if (count > 0) {
+          this.countdownText!.setText(count.toString());
+        } else {
+          this.countdownText!.setText('GO!');
+          // Start the game after a brief "GO!" display
+          this.time.delayedCall(500, () => {
+            this.startGame();
+          });
+        }
+      },
+      callbackScope: this,
+      loop: true,
+      repeat: 2 // 3, 2, 1, then GO!
+    });
+  }
+  
   private startGame(): void {
+    // Remove countdown overlay
+    if (this.countdownText) {
+      this.countdownText.destroy();
+      this.countdownText = null;
+    }
+    
+    if (this.countdownTimer) {
+      this.countdownTimer.destroy();
+      this.countdownTimer = null;
+    }
+    
     this.gameStartTime = this.time.now;
     this.isGameActive = true;
     this.isSpawningActive = true;
-    
-    // Hide the start message
-    if ((this as any).startMessage) {
-      (this as any).startMessage.destroy();
-    }
     
     console.log('Game started, isGameActive:', this.isGameActive);
     
@@ -390,13 +433,6 @@ export default class PlayingGameScene extends Phaser.Scene {
   
   private setupInput(): void {
     const keys = this.input.keyboard!;
-    
-    // Space key to start the game
-    keys.on('keydown-SPACE', () => {
-      if (!this.isGameActive && !this.resultsOverlay) {
-        this.startGame();
-      }
-    });
     
     // WASD input for asteroid sequences
     keys.on('keydown-W', () => this.handleKeyPress('W'));
