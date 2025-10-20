@@ -356,17 +356,13 @@ export default class SettingsScene extends Phaser.Scene {
       buttonHeight
     );
     
-    // Auto-launch calibration when switching to wand mode
+    // Initialize visualizer manager when switching to wand mode (but don't auto-redirect)
     if (newMode === 'wand') {
       console.log('SettingsScene: Switching to wand mode');
       // Initialize visualizer manager if not already done
       if (!visualizerManager.isInitialized()) {
         visualizerManager.initialize(this);
       }
-      // Wait a frame for initialization
-      this.time.delayedCall(100, () => {
-        this.scene.start('WandCalibration');
-      });
     } else {
       // When switching to keyboard mode, cleanup visualizer manager
       console.log('SettingsScene: Switching to keyboard mode');

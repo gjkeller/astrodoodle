@@ -124,8 +124,58 @@ class VisualizerManager {
       await this.vision.startCamera();
       this.cameraStarted = true;
       console.log('VisualizerManager: Camera started successfully');
+      
+      // Check for saved balls and auto-calibrate player 1 if ball 1 exists
+      this.checkForSavedBallsAndAutoCalibrate();
     } catch (error) {
       console.error('VisualizerManager: Failed to start camera:', error);
+    }
+  }
+
+  private checkForSavedBallsAndAutoCalibrate(): void {
+    if (!this.vision) return;
+    
+    try {
+      // Check if there are saved balls in localStorage
+      const savedBalls = this.loadBallsFromStorage();
+      console.log('VisualizerManager: Found saved balls:', savedBalls.length);
+      
+      // If we have at least one saved ball, auto-calibrate player 1 to ball 1
+      if (savedBalls.length > 0) {
+        const ball1 = savedBalls.find((ball: {id: number, centerHue: number, params: any}) => ball.id === 1);
+        if (ball1) {
+          console.log('VisualizerManager: Auto-calibrating Player 1 to saved ball 1');
+          this.player1Calibrated = true;
+          this.player1BallId = 1;
+          console.log('VisualizerManager: Player 1 auto-calibrated with ball ID 1');
+        }
+        
+        // If we have a second saved ball, auto-calibrate player 2 to ball 2
+        if (savedBalls.length > 1) {
+          const ball2 = savedBalls.find((ball: {id: number, centerHue: number, params: any}) => ball.id === 2);
+          if (ball2) {
+            console.log('VisualizerManager: Auto-calibrating Player 2 to saved ball 2');
+            this.player2Calibrated = true;
+            this.player2BallId = 2;
+            console.log('VisualizerManager: Player 2 auto-calibrated with ball ID 2');
+          }
+        }
+      }
+    } catch (error) {
+      console.error('VisualizerManager: Error checking for saved balls:', error);
+    }
+  }
+
+  private loadBallsFromStorage(): Array<{id: number, centerHue: number, params: any}> {
+    try {
+      const saved = localStorage.getItem('visionTuner_balls');
+      if (!saved) return [];
+      const parsed = JSON.parse(saved);
+      if (!Array.isArray(parsed)) return [];
+      return parsed;
+    } catch (error) {
+      console.warn('VisualizerManager: Failed to load balls from localStorage:', error);
+      return [];
     }
   }
 
@@ -251,11 +301,6 @@ class VisualizerManager {
           
           // Update timestamp for wand presence detection
           this.wand2LastPositionTime = Date.now();
-          
-          // Debug logging
-          if (Math.random() < 0.01) { // Log occasionally to avoid spam
-            console.log(`Player 2 using ball ID ${this.player2BallId} at position ${this.wand2CurrentPosition.x}, ${this.wand2CurrentPosition.y}`);
-          }
         }
       } else {
         // For calibration purposes, use second ball data
@@ -582,6 +627,20 @@ class VisualizerManager {
    */
   public isPlayerCalibrated(player: 1 | 2): boolean {
     return player === 1 ? this.player1Calibrated : this.player2Calibrated;
+  }
+
+  /**
+   * Check if player 1 is auto-calibrated from saved data
+   */
+  public isPlayer1AutoCalibrated(): boolean {
+    return this.player1Calibrated && this.player1BallId === 1;
+  }
+
+  /**
+   * Check if player 2 is auto-calibrated from saved data
+   */
+  public isPlayer2AutoCalibrated(): boolean {
+    return this.player2Calibrated && this.player2BallId === 2;
   }
 
   /**

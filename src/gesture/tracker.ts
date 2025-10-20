@@ -99,8 +99,8 @@ export function getBestPlayerGestures(removeDetectedPlayers: boolean = true): Ma
     // Fixed thresholds for each gesture type
     const gestureThresholds: Record<string, number> = {
         'five-point star': 0.2,
-        'triangle': 0.2,
-        'null': 0.15,
+        'triangle': 0.17,
+        'null': 0.13,
         'arrowhead': 0.25
     };
 

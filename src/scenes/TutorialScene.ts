@@ -81,7 +81,7 @@ export default class TutorialScene extends Phaser.Scene {
     this.skipInstructions = this.add.text(
       GAME_SETTINGS.CANVAS_WIDTH / 2,
       GAME_SETTINGS.CANVAS_HEIGHT - 50,
-      'Press ENTER, ESC, or SPACE to continue • Auto-advance in 5s',
+      'Press ENTER, ESC, or SPACE to continue • Auto-advance in 8s',
       {
         fontSize: '16px',
         fontFamily: '"Press Start 2P", monospace',
@@ -180,7 +180,7 @@ export default class TutorialScene extends Phaser.Scene {
     this.slideContainer.setDepth(50);
     
     // Set up auto-advance timer
-    this.autoAdvanceTimer = this.time.delayedCall(5000, () => {
+    this.autoAdvanceTimer = this.time.delayedCall(8000, () => {
       this.nextSlide();
     });
   }

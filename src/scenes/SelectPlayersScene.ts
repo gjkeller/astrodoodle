@@ -4,6 +4,7 @@ import { gameStore, eventBus, settingsStore, createModeInput, type ModeInput, vi
 import { GAME_SETTINGS } from '../core/settings';
 import type { PlayerId } from '../types/global';
 import { resetTracker } from '../gesture/tracker';
+import { Visualizer } from '../ui/visualizer';
 
 export default class SelectPlayersScene extends Phaser.Scene {
   private title: Phaser.GameObjects.Text | Phaser.GameObjects.BitmapText;
@@ -12,6 +13,8 @@ export default class SelectPlayersScene extends Phaser.Scene {
   private backButton: Button;
   private modeInput: ModeInput | null = null;
   private hasSeenWandInWandMode: boolean = false;
+  private visualizer1: Visualizer | null = null;
+  private visualizer2: Visualizer | null = null;
   
   constructor() {
     super('SelectPlayers');
@@ -42,6 +45,7 @@ export default class SelectPlayersScene extends Phaser.Scene {
     this.createBackground();
     this.createTitle();
     this.createPlayerPanels(inputMode);
+    this.createVisualizers(inputMode);
     this.createStartButton();
     this.createBackButton();
     this.setupInput();
@@ -102,6 +106,62 @@ export default class SelectPlayersScene extends Phaser.Scene {
       this.playerPanels[1].setVisible(true);
     }
   }
+
+  private createVisualizers(inputMode: 'keyboard' | 'wand'): void {
+    // Only create visualizers in wand mode
+    if (inputMode !== 'wand') return;
+    
+    const playerCount = settingsStore.getPlayerCount();
+    
+    if (playerCount === 1) {
+      // Singleplayer: one visualizer below the player panel
+      this.visualizer1 = new Visualizer(
+        this,
+        GAME_SETTINGS.CANVAS_WIDTH / 2, // Center
+        GAME_SETTINGS.CANVAS_HEIGHT / 2 + 150, // Below player panel
+        0.6, // Scale
+        GAME_SETTINGS.COLORS.ORANGE, // Orange border for player 1
+        3, // Border width
+        0x222222 // Background
+      );
+    } else {
+      // Multiplayer: dual visualizers below each player panel
+      this.visualizer1 = new Visualizer(
+        this,
+        GAME_SETTINGS.CANVAS_WIDTH * 0.25, // Left side
+        GAME_SETTINGS.CANVAS_HEIGHT / 2 + 150, // Below player panel
+        0.5, // Scale - slightly smaller for dual
+        GAME_SETTINGS.COLORS.ORANGE, // Orange border for player 1
+        3, // Border width
+        0x222222 // Background
+      );
+      
+      this.visualizer2 = new Visualizer(
+        this,
+        GAME_SETTINGS.CANVAS_WIDTH * 0.75, // Right side
+        GAME_SETTINGS.CANVAS_HEIGHT / 2 + 150, // Below player panel
+        0.5, // Scale - slightly smaller for dual
+        GAME_SETTINGS.COLORS.PURPLE, // Purple border for player 2
+        3, // Border width
+        0x222222 // Background
+      );
+      
+      // Add labels for each visualizer
+      this.add.text(
+        GAME_SETTINGS.CANVAS_WIDTH * 0.25,
+        GAME_SETTINGS.CANVAS_HEIGHT / 2 + 100,
+        'PLAYER 1 WAND',
+        { fontFamily: '"Press Start 2P"', fontSize: '16px', color: '#FF6600' }
+      ).setOrigin(0.5).setDepth(200);
+      
+      this.add.text(
+        GAME_SETTINGS.CANVAS_WIDTH * 0.75,
+        GAME_SETTINGS.CANVAS_HEIGHT / 2 + 100,
+        'PLAYER 2 WAND',
+        { fontFamily: '"Press Start 2P"', fontSize: '16px', color: '#8800FF' }
+      ).setOrigin(0.5).setDepth(200);
+    }
+  }
   
   private createStartButton(): void {
     this.startButton = new Button(this, {
@@ -147,6 +207,9 @@ export default class SelectPlayersScene extends Phaser.Scene {
       // Update visualizer manager
       visualizerManager.update();
       
+      // Update visualizer displays
+      this.updateVisualizerData();
+      
       if (playerCount === 1) {
         // Singleplayer: check for player 1 wand presence (requires calibration)
         const player1WandPresent = visualizerManager.isPlayer1WandPresent();
@@ -169,6 +232,50 @@ export default class SelectPlayersScene extends Phaser.Scene {
         if (player2WandPresent && gameStore.players[1].ready === 'not-ready') {
           eventBus.emit('player:ready', { playerId: 1, ready: 'ready' });
         }
+      }
+    }
+  }
+
+  private updateVisualizerData(): void {
+    console.log('updateVisualizerData');
+    const playerCount = settingsStore.getPlayerCount();
+
+    
+    if (playerCount === 1) {
+      console.log('Singleplayer visualizers');
+      // Singleplayer visualizer
+      if (this.visualizer1) {
+        const points = visualizerManager.getPlayer1Points();
+        const currentPosition = visualizerManager.getPlayer1CurrentPosition();
+        const visualizerSpell = visualizerManager.getVisualizerSpell();
+        
+        this.visualizer1.setPoints(points);
+        this.visualizer1.setCurrentPosition(currentPosition);
+        this.visualizer1.showSpell(visualizerSpell);
+      }
+    } else {
+      console.log('Multiplayer visualizers');
+      // Multiplayer visualizers - update both unconditionally like WandCalibrationScene
+      if (this.visualizer1) {
+        const wand1Points = visualizerManager.getPlayer1Points();
+        const wand1Position = visualizerManager.getPlayer1CurrentPosition();
+        const wand1Spell = visualizerManager.getVisualizerSpell();
+        
+        this.visualizer1.setPoints(wand1Points);
+        this.visualizer1.setCurrentPosition(wand1Position);
+        console.log('wand1Spell', wand1Position);
+        this.visualizer1.showSpell(wand1Spell);
+      }
+      
+      if (this.visualizer2) {
+        const wand2Points = visualizerManager.getPlayer2Points();
+        const wand2Position = visualizerManager.getPlayer2CurrentPosition();
+        const wand2Spell = visualizerManager.getWand2VisualizerSpell();
+        
+        this.visualizer2.setPoints(wand2Points);
+        this.visualizer2.setCurrentPosition(wand2Position);
+        console.log('wand2Spell', wand2Position);
+        this.visualizer2.showSpell(wand2Spell);
       }
     }
   }
