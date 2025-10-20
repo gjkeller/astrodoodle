@@ -16,6 +16,10 @@ class SettingsStoreImpl {
   getPlayerCount(): PlayerCount {
     return this.playerCount;
   }
+  
+  setPlayerCount(count: PlayerCount): void {
+    this.playerCount = count;
+  }
 }
 
 // Singleton instance

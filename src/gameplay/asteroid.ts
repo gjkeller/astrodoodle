@@ -1,9 +1,10 @@
-import type { PlayerSide } from '../types/global';
+import type { PlayerSide, PlayerId } from '../types/global';
 
 export class Asteroid extends Phaser.GameObjects.Container {
   public sprite: Phaser.GameObjects.Image;
   private characterTexts: Phaser.GameObjects.Text[] = [];
   private side: PlayerSide;
+  private playerId: PlayerId;
   private sequence: string;
   public currentIndex: number = 0;
   private consumedKeys: boolean[] = [];
@@ -16,11 +17,13 @@ export class Asteroid extends Phaser.GameObjects.Container {
     x: number,
     y: number,
     side: PlayerSide,
-    sequence: string
+    sequence: string,
+    playerId: PlayerId
   ) {
     super(scene, x, y);
     
     this.side = side;
+    this.playerId = playerId;
     this.sequence = sequence;
     this.sequenceLength = sequence.split(' ').length;
     this.consumedKeys = new Array(this.sequenceLength).fill(false);
@@ -194,6 +197,10 @@ export class Asteroid extends Phaser.GameObjects.Container {
   
   getSide(): PlayerSide {
     return this.side;
+  }
+  
+  getPlayerId(): PlayerId {
+    return this.playerId;
   }
   
   isComplete(): boolean {

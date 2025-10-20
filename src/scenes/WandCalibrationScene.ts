@@ -4,8 +4,14 @@ import { GAME_SETTINGS } from '../core/settings';
 import { visualizerManager } from '../core';
 
 export default class WandCalibrationScene extends Phaser.Scene {
-  private visualizer: Visualizer;
+  private visualizer1: Visualizer; // Player 1 (orange) visualizer
+  private visualizer2: Visualizer; // Player 2 (purple) visualizer
   private backButton: Phaser.GameObjects.Container;
+  private player1Button: Phaser.GameObjects.Container;
+  private player2Button: Phaser.GameObjects.Container;
+  private selectedPlayer: 1 | 2 = 1;
+  private player1Calibrated: boolean = false;
+  private player2Calibrated: boolean = false;
   
   constructor() {
     super('WandCalibration');
@@ -47,20 +53,48 @@ export default class WandCalibrationScene extends Phaser.Scene {
     this.add.text(
       GAME_SETTINGS.CANVAS_WIDTH / 2,
       140,
-      'Move your wand to calibrate',
+      'Select player and move wand to calibrate',
       { fontFamily: '"Press Start 2P"', fontSize: '16px', color: '#aaaaaa' }
     ).setOrigin(0.5);
     
-    // Large centered visualizer
-    this.visualizer = new Visualizer(
+    // Player selection buttons
+    this.createPlayerSelectionButtons();
+    
+    // Dual visualizers side by side
+    this.visualizer1 = new Visualizer(
       this,
-      GAME_SETTINGS.CANVAS_WIDTH / 2,
+      GAME_SETTINGS.CANVAS_WIDTH * 0.25, // Left side
       GAME_SETTINGS.CANVAS_HEIGHT / 2,
-      1.0, // Larger scale
-      0xFFFFFF,
+      0.8, // Slightly smaller to fit both
+      GAME_SETTINGS.COLORS.ORANGE, // Orange for Player 1
       3,
       0x222222
     );
+    
+    this.visualizer2 = new Visualizer(
+      this,
+      GAME_SETTINGS.CANVAS_WIDTH * 0.75, // Right side
+      GAME_SETTINGS.CANVAS_HEIGHT / 2,
+      0.8, // Slightly smaller to fit both
+      GAME_SETTINGS.COLORS.PURPLE, // Purple for Player 2
+      3,
+      0x222222
+    );
+    
+    // Add labels for each visualizer
+    this.add.text(
+      GAME_SETTINGS.CANVAS_WIDTH * 0.25,
+      GAME_SETTINGS.CANVAS_HEIGHT / 2 - 200,
+      'PLAYER 1',
+      { fontFamily: '"Press Start 2P"', fontSize: '20px', color: GAME_SETTINGS.COLORS.ORANGE }
+    ).setOrigin(0.5);
+    
+    this.add.text(
+      GAME_SETTINGS.CANVAS_WIDTH * 0.75,
+      GAME_SETTINGS.CANVAS_HEIGHT / 2 - 200,
+      'PLAYER 2',
+      { fontFamily: '"Press Start 2P"', fontSize: '20px', color: GAME_SETTINGS.COLORS.PURPLE }
+    ).setOrigin(0.5);
     
     // Back button
     this.createBackButton();
@@ -70,27 +104,30 @@ export default class WandCalibrationScene extends Phaser.Scene {
     // Update visualizer manager
     visualizerManager.update();
     
-    // Get data from singleton manager
-    const points = visualizerManager.getPoints();
-    const position = visualizerManager.getCurrentPosition();
-    const spell = visualizerManager.getCurrentSpell();
-    const calibratedColor = visualizerManager.getCalibratedColor();
+    // Get data from singleton manager for both players
+    const player1Points = visualizerManager.getPlayer1Points();
+    const player1Position = visualizerManager.getPlayer1CurrentPosition();
+    const player1Spell = visualizerManager.getVisualizerSpell();
     
-    // Debug logging
-    if (points.length > 0 || position || spell !== 'NONE') {
-      // console.log('WandCalibrationScene: Data - points:', points.length, 'position:', position, 'spell:', spell);
+    const player2Points = visualizerManager.getPlayer2Points();
+    const player2Position = visualizerManager.getPlayer2CurrentPosition();
+    const player2Spell = visualizerManager.getWand2VisualizerSpell();
+    
+    // Check if wand is present and mark current selected player as calibrated
+    const wandPresent = visualizerManager.isWandPresent();
+    if (wandPresent && !this.isCurrentPlayerCalibrated()) {
+      this.markCurrentPlayerCalibrated();
     }
     
-    // Update visualizer border color with calibrated color
-    if (calibratedColor) {
-      const borderColor = this.hsvToRgbHex(calibratedColor.h, calibratedColor.s, calibratedColor.v);
-      this.visualizer.setBorderColor(borderColor, 3);
-    }
+    // Update visualizer 1 (Player 1 - Orange)
+    this.visualizer1.setPoints(player1Points);
+    this.visualizer1.setCurrentPosition(player1Position);
+    this.visualizer1.showSpell(player1Spell);
     
-    // Sync visualizer with singleton manager
-    this.visualizer.setPoints(points);
-    this.visualizer.setCurrentPosition(position);
-    this.visualizer.showSpell(visualizerManager.getVisualizerSpell()); // Use visualizer spell for display
+    // Update visualizer 2 (Player 2 - Purple)
+    this.visualizer2.setPoints(player2Points);
+    this.visualizer2.setCurrentPosition(player2Position);
+    this.visualizer2.showSpell(player2Spell);
   }
 
   /**
@@ -128,6 +165,128 @@ export default class WandCalibrationScene extends Phaser.Scene {
 
     return (r << 16) | (g << 8) | b;
   }
+  
+  private createPlayerSelectionButtons(): void {
+    const buttonWidth = 120;
+    const spacing = 20;
+    
+    // Player 1 button (left side)
+    this.player1Button = this.add.container(
+      GAME_SETTINGS.CANVAS_WIDTH / 2 - buttonWidth / 2 - spacing / 2,
+      200
+    );
+    
+    // Player 2 button (right side)
+    this.player2Button = this.add.container(
+      GAME_SETTINGS.CANVAS_WIDTH / 2 + buttonWidth / 2 + spacing / 2,
+      200
+    );
+    
+    this.createPlayerButton(this.player1Button, 1, 'PLAYER 1', GAME_SETTINGS.COLORS.ORANGE);
+    this.createPlayerButton(this.player2Button, 2, 'PLAYER 2', GAME_SETTINGS.COLORS.PURPLE);
+    
+    // Update button states
+    this.updatePlayerButtonStates();
+  }
+  
+  private createPlayerButton(container: Phaser.GameObjects.Container, playerId: 1 | 2, text: string, color: number): void {
+    const buttonWidth = 120;
+    const buttonHeight = 40;
+    
+    // Create button background
+    const bg = this.add.graphics();
+    bg.fillStyle(0x333333, 0.8);
+    bg.fillRoundedRect(-buttonWidth / 2, -buttonHeight / 2, buttonWidth, buttonHeight, 8);
+    bg.lineStyle(2, color, 1);
+    bg.strokeRoundedRect(-buttonWidth / 2, -buttonHeight / 2, buttonWidth, buttonHeight, 8);
+    
+    // Create button text
+    const buttonText = BitmapTextHelper.createButtonText(this, 0, 0, text);
+    buttonText.setTint(color);
+    
+    container.add([bg, buttonText]);
+    container.setSize(buttonWidth, buttonHeight);
+    container.setDepth(5);
+    
+    // Make button interactive
+    container.setInteractive();
+    
+    // Add hover effects
+    container.on('pointerover', () => {
+      bg.clear();
+      bg.fillStyle(0x444444, 0.9);
+      bg.fillRoundedRect(-buttonWidth / 2, -buttonHeight / 2, buttonWidth, buttonHeight, 8);
+      bg.lineStyle(2, color, 1);
+      bg.strokeRoundedRect(-buttonWidth / 2, -buttonHeight / 2, buttonWidth, buttonHeight, 8);
+    });
+    
+    container.on('pointerout', () => {
+      this.updatePlayerButtonStates();
+    });
+    
+    container.on('pointerdown', () => {
+      this.selectPlayer(playerId);
+    });
+  }
+  
+  private selectPlayer(playerId: 1 | 2): void {
+    this.selectedPlayer = playerId;
+    visualizerManager.setCalibrationPlayer(playerId);
+    this.updatePlayerButtonStates();
+  }
+  
+  private updatePlayerButtonStates(): void {
+    const buttonWidth = 120;
+    const buttonHeight = 40;
+    
+    // Update Player 1 button
+    const bg1 = this.player1Button.list[0] as Phaser.GameObjects.Graphics;
+    bg1.clear();
+    if (this.selectedPlayer === 1) {
+      bg1.fillStyle(0x555555, 0.9);
+      bg1.lineStyle(3, GAME_SETTINGS.COLORS.ORANGE, 1);
+    } else {
+      bg1.fillStyle(0x333333, 0.8);
+      bg1.lineStyle(2, GAME_SETTINGS.COLORS.ORANGE, 1);
+    }
+    bg1.fillRoundedRect(-buttonWidth / 2, -buttonHeight / 2, buttonWidth, buttonHeight, 8);
+    bg1.strokeRoundedRect(-buttonWidth / 2, -buttonHeight / 2, buttonWidth, buttonHeight, 8);
+    
+    // Update Player 2 button
+    const bg2 = this.player2Button.list[0] as Phaser.GameObjects.Graphics;
+    bg2.clear();
+    if (this.selectedPlayer === 2) {
+      bg2.fillStyle(0x555555, 0.9);
+      bg2.lineStyle(3, GAME_SETTINGS.COLORS.PURPLE, 1);
+    } else {
+      bg2.fillStyle(0x333333, 0.8);
+      bg2.lineStyle(2, GAME_SETTINGS.COLORS.PURPLE, 1);
+    }
+    bg2.fillRoundedRect(-buttonWidth / 2, -buttonHeight / 2, buttonWidth, buttonHeight, 8);
+    bg2.strokeRoundedRect(-buttonWidth / 2, -buttonHeight / 2, buttonWidth, buttonHeight, 8);
+  }
+  
+  private isCurrentPlayerCalibrated(): boolean {
+    return this.selectedPlayer === 1 ? this.player1Calibrated : this.player2Calibrated;
+  }
+  
+  private markCurrentPlayerCalibrated(): void {
+    if (this.selectedPlayer === 1) {
+      this.player1Calibrated = true;
+    } else {
+      this.player2Calibrated = true;
+    }
+    
+    // Set the calibration player and mark as calibrated
+    visualizerManager.setCalibrationPlayer(this.selectedPlayer);
+    visualizerManager.markPlayerCalibrated();
+    
+    // Debug logging
+    const debugInfo = visualizerManager.getDebugInfo();
+    console.log(`Player ${this.selectedPlayer} wand calibrated!`);
+    console.log('Debug info:', debugInfo);
+  }
+  
   
   private createBackButton(): void {
     const buttonWidth = 150;

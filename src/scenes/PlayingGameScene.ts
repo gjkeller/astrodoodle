@@ -19,8 +19,14 @@ export default class PlayingGameScene extends Phaser.Scene {
   private asteroids: Asteroid[] = [];
   private missiles: Missile[] = [];
   private staticShip: Phaser.GameObjects.Image;
+  private player1Ship: Phaser.GameObjects.Image;
+  private player2Ship: Phaser.GameObjects.Image;
   private minimap: Minimap | null = null;
+  private minimap1: Minimap | null = null;
+  private minimap2: Minimap | null = null;
   private visualizer: Visualizer | null = null;
+  private visualizer1: Visualizer | null = null;
+  private visualizer2: Visualizer | null = null;
   private fpsText: Phaser.GameObjects.Text | null = null;
   private modeInput: ModeInput | null = null;
   
@@ -39,10 +45,18 @@ export default class PlayingGameScene extends Phaser.Scene {
   private currentTick: number = 0;
   private gameStartTick: number = 0;
   private ticksSinceLastSpawn: number = 0;
+  private ticksSinceLastSpawnP1: number = 0;
+  private ticksSinceLastSpawnP2: number = 0;
   
   // Difficulty progression
   private currentSpawnRateTicks: number = 60; // Start with 60 ticks (2 seconds)
   private currentFallSpeed: number = 1.0; // pixels per tick
+  
+  // Multiplayer difficulty progression (separate for each player)
+  private currentSpawnRateTicksP1: number = 60;
+  private currentSpawnRateTicksP2: number = 60;
+  private currentFallSpeedP1: number = 1.0;
+  private currentFallSpeedP2: number = 1.0;
   
   // Progressive symbol introduction for wand mode
   private symbolsUnlocked: string[] = [];
@@ -64,6 +78,7 @@ export default class PlayingGameScene extends Phaser.Scene {
       } else {
         visualizerManager.updateSceneReference(this);
       }
+      
       this.modeInput = createModeInput('wand', this);
       this.symbolsUnlocked = ['TRIANGLE', 'NULL']; // Start with triangle and null
     } else {
@@ -79,6 +94,7 @@ export default class PlayingGameScene extends Phaser.Scene {
     this.createStaticShip();
     this.createPlayerHUD();
     this.createMinimap();
+    this.createSplitScreenDivider();
     this.setupInput();
     this.setupEventListeners();
     
@@ -120,7 +136,7 @@ export default class PlayingGameScene extends Phaser.Scene {
     // Update visualizer manager and data if in wand mode
     if (settingsStore.getInputMode() === 'wand') {
       visualizerManager.update();
-      if (this.visualizer) {
+      if (this.visualizer || this.visualizer1 || this.visualizer2) {
         this.updateVisualizerData();
       }
     }
@@ -184,33 +200,74 @@ export default class PlayingGameScene extends Phaser.Scene {
   }
   
   private createStaticShip(): void {
-    // Create a static ship positioned lower than center
-    this.staticShip = this.add.image(
-      GAME_SETTINGS.CANVAS_WIDTH / 2,
-      GAME_SETTINGS.CANVAS_HEIGHT * 0.7, // Move ship down to 70% of screen height
-      'orange-ship'
-    );
-    this.staticShip.setScale(0.8);
-    this.staticShip.setDepth(100);
+    const playerCount = settingsStore.getPlayerCount();
+    const shipY = GAME_SETTINGS.CANVAS_HEIGHT * 0.7; // Move ship down to 70% of screen height
     
-    // Enable physics body for collision detection
-    this.physics.world.enable(this.staticShip);
-    const shipBody = this.staticShip.body as Phaser.Physics.Arcade.Body;
-
-    // Ship is triangular, roughly 70px wide and 90px tall at 0.8 scale
-    // Use a smaller collision box that fits the ship body better
-    // Account for the 0.8 scale: 70*0.8=56, 90*0.8=72
-    shipBody.setSize(56, 72); // Width: 70*0.8, Height: 90*0.8
-    shipBody.setOffset(-28, -36); // Center the collision box (half of width and height)
-    shipBody.setImmovable(true); // Ship doesn't move
+    if (playerCount === 1) {
+      // Singleplayer: one ship in center
+      this.staticShip = this.add.image(
+        GAME_SETTINGS.CANVAS_WIDTH / 2,
+        shipY,
+        'orange-ship'
+      );
+      this.staticShip.setScale(0.8);
+      this.staticShip.setDepth(100);
+      
+      // Enable physics body for collision detection
+      this.physics.world.enable(this.staticShip);
+      const shipBody = this.staticShip.body as Phaser.Physics.Arcade.Body;
+      shipBody.setSize(56, 72); // Width: 70*0.8, Height: 90*0.8
+      shipBody.setOffset(-28, -36); // Center the collision box
+      shipBody.setImmovable(true); // Ship doesn't move
+    } else {
+      // Multiplayer: two ships in their respective lanes
+      // Player 1 ship (left side)
+      this.player1Ship = this.add.image(
+        GAME_SETTINGS.CANVAS_WIDTH * 0.25,
+        shipY,
+        'orange-ship'
+      );
+      this.player1Ship.setScale(0.8);
+      this.player1Ship.setDepth(100);
+      
+      // Player 2 ship (right side)
+      this.player2Ship = this.add.image(
+        GAME_SETTINGS.CANVAS_WIDTH * 0.75,
+        shipY,
+        'purple-ship'
+      );
+      this.player2Ship.setScale(0.8);
+      this.player2Ship.setDepth(100);
+      
+      // Enable physics bodies for collision detection
+      this.physics.world.enable(this.player1Ship);
+      this.physics.world.enable(this.player2Ship);
+      
+      const ship1Body = this.player1Ship.body as Phaser.Physics.Arcade.Body;
+      const ship2Body = this.player2Ship.body as Phaser.Physics.Arcade.Body;
+      
+      ship1Body.setSize(56, 72);
+      ship1Body.setOffset(-28, -36);
+      ship1Body.setImmovable(true);
+      
+      ship2Body.setSize(56, 72);
+      ship2Body.setOffset(-28, -36);
+      ship2Body.setImmovable(true);
+    }
   }
   
   private createPlayerHUD(): void {
-    // Create score display at the top center
-    this.createScoreDisplay();
+    const playerCount = settingsStore.getPlayerCount();
     
-    // Create multiplier display at top right
-    this.createMultiplierDisplay();
+    if (playerCount === 1) {
+      // Singleplayer: score at top center, multiplier at top right
+      this.createScoreDisplay();
+      this.createMultiplierDisplay();
+    } else {
+      // Multiplayer: dual displays
+      this.createDualScoreDisplays();
+      this.createDualMultiplierDisplays();
+    }
   }
   
   private createScoreDisplay(): void {
@@ -243,24 +300,111 @@ export default class PlayingGameScene extends Phaser.Scene {
     // Store reference for updates
     (this as any).multiplierText = multiplierText;
   }
+
+  private createDualScoreDisplays(): void {
+    // Player 1 score (left side)
+    const scoreText1 = BitmapTextHelper.createHUDText(
+      this,
+      200,
+      50,
+      'P1: 0',
+      GAME_SETTINGS.COLORS.ORANGE
+    );
+    scoreText1.setDepth(200);
+    this.add.existing(scoreText1);
+    
+    // Player 2 score (right side)
+    const scoreText2 = BitmapTextHelper.createHUDText(
+      this,
+      GAME_SETTINGS.CANVAS_WIDTH - 200,
+      50,
+      'P2: 0',
+      GAME_SETTINGS.COLORS.PURPLE
+    );
+    scoreText2.setDepth(200);
+    this.add.existing(scoreText2);
+    
+    // Store references for updates
+    (this as any).scoreText1 = scoreText1;
+    (this as any).scoreText2 = scoreText2;
+  }
+
+  private createDualMultiplierDisplays(): void {
+    // Player 1 multiplier (left side)
+    const multiplierText1 = BitmapTextHelper.createHUDText(
+      this,
+      200,
+      100,
+      '★',
+      GAME_SETTINGS.COLORS.YELLOW
+    );
+    multiplierText1.setDepth(200);
+    this.add.existing(multiplierText1);
+    
+    // Player 2 multiplier (right side)
+    const multiplierText2 = BitmapTextHelper.createHUDText(
+      this,
+      GAME_SETTINGS.CANVAS_WIDTH - 200,
+      100,
+      '★',
+      GAME_SETTINGS.COLORS.YELLOW
+    );
+    multiplierText2.setDepth(200);
+    this.add.existing(multiplierText2);
+    
+    // Store references for updates
+    (this as any).multiplierText1 = multiplierText1;
+    (this as any).multiplierText2 = multiplierText2;
+  }
   
   private createMinimap(): void {
     const inputMode = settingsStore.getInputMode();
+    const playerCount = settingsStore.getPlayerCount();
     
     if (inputMode === 'keyboard') {
-      // Create minimap in bottom-left corner, above the progress bar
-      this.minimap = new Minimap(this, 100, GAME_SETTINGS.CANVAS_HEIGHT - 140);
+      if (playerCount === 1) {
+        // Single minimap for singleplayer
+        this.minimap = new Minimap(this, 100, GAME_SETTINGS.CANVAS_HEIGHT - 140);
+      } else {
+        // Dual minimaps for multiplayer
+        this.minimap1 = new Minimap(this, 100, GAME_SETTINGS.CANVAS_HEIGHT - 140);
+        this.minimap2 = new Minimap(this, GAME_SETTINGS.CANVAS_WIDTH - 100, GAME_SETTINGS.CANVAS_HEIGHT - 140);
+      }
     } else {
-      // Create Visualizer bottom-left
-      this.visualizer = new Visualizer(
-        this,
-        100, // x
-        GAME_SETTINGS.CANVAS_HEIGHT - 240, // y  
-        0.5, // scale
-        0xFFFFFF, // border
-        2, // border width
-        0x000000 // background
-      );
+      // Wand mode
+      if (playerCount === 1) {
+        // Single visualizer bottom-left
+        this.visualizer = new Visualizer(
+          this,
+          100, // x
+          GAME_SETTINGS.CANVAS_HEIGHT - 240, // y  
+          0.5, // scale
+          0xFFFFFF, // border
+          2, // border width
+          0x000000 // background
+        );
+      } else {
+        // Dual visualizers for multiplayer
+        this.visualizer1 = new Visualizer(
+          this,
+          100, // x - left side
+          GAME_SETTINGS.CANVAS_HEIGHT - 240, // y  
+          0.4, // scale - slightly smaller for dual
+          GAME_SETTINGS.COLORS.ORANGE, // orange border for player 1
+          2, // border width
+          0x000000 // background
+        );
+        
+        this.visualizer2 = new Visualizer(
+          this,
+          GAME_SETTINGS.CANVAS_WIDTH - 100, // x - right side
+          GAME_SETTINGS.CANVAS_HEIGHT - 240, // y  
+          0.4, // scale - slightly smaller for dual
+          GAME_SETTINGS.COLORS.PURPLE, // purple border for player 2
+          2, // border width
+          0x000000 // background
+        );
+      }
     }
     
     // Create FPS counter if enabled
@@ -278,6 +422,21 @@ export default class PlayingGameScene extends Phaser.Scene {
       padding: { x: 8, y: 4 }
     });
     this.fpsText.setDepth(200);
+  }
+
+  private createSplitScreenDivider(): void {
+    const playerCount = settingsStore.getPlayerCount();
+    
+    if (playerCount === 2) {
+      // Create a vertical line to separate the two player lanes
+      const divider = this.add.graphics();
+      divider.lineStyle(3, GAME_SETTINGS.COLORS.WHITE, 0.5);
+      divider.beginPath();
+      divider.moveTo(GAME_SETTINGS.CANVAS_WIDTH / 2, 0);
+      divider.lineTo(GAME_SETTINGS.CANVAS_WIDTH / 2, GAME_SETTINGS.CANVAS_HEIGHT);
+      divider.strokePath();
+      divider.setDepth(10); // Above background but below ships
+    }
   }
   
   private createExplosionAnimation(): void {
@@ -353,12 +512,14 @@ export default class PlayingGameScene extends Phaser.Scene {
   private startAsteroidSpawning(): void {
     // Spawning now handled by tick counter in fixedUpdate()
     this.ticksSinceLastSpawn = 0;
+    this.ticksSinceLastSpawnP1 = 0;
+    this.ticksSinceLastSpawnP2 = 0;
   }
   
-  private spawnAsteroid(): void {
+  private spawnAsteroid(playerId: PlayerId): void {
     if (!this.isSpawningActive) return;
     
-    console.log('spawnAsteroid called, isSpawningActive:', this.isSpawningActive);
+    console.log(`spawnAsteroid called for player ${playerId}, isSpawningActive:`, this.isSpawningActive);
     
     const inputMode = settingsStore.getInputMode();
     const sequenceLength = this.getSequenceLengthForWandMode();
@@ -367,44 +528,62 @@ export default class PlayingGameScene extends Phaser.Scene {
     if (inputMode === 'wand') {
       sequence = this.generateSpellSequence(sequenceLength);
     } else {
-      sequence = this.generateWASDSequence(sequenceLength);
+      sequence = this.generateKeyboardSequence(playerId, sequenceLength);
     }
     
-    // Spawn first asteroid with collision detection
-    const spawnX = this.findValidSpawnPosition();
-    console.log('spawnX:', spawnX);
+    // Spawn asteroid in player's lane
+    const spawnX = this.findValidSpawnPosition(playerId);
+    console.log(`spawnX for player ${playerId}:`, spawnX);
     if (spawnX !== null) {
-      const asteroid = new Asteroid(this, spawnX, -100, 'center', sequence);
+      const side = playerId === 0 ? 'left' : 'right';
+      const asteroid = new Asteroid(this, spawnX, -100, side, sequence, playerId);
       this.asteroids.push(asteroid);
-      console.log('Asteroid spawned, total asteroids:', this.asteroids.length);
+      console.log(`Asteroid spawned for player ${playerId}, total asteroids:`, this.asteroids.length);
     }
     
     // Chance for multiple asteroids to spawn at once - ONLY in keyboard mode
     if (inputMode === 'keyboard' && Math.random() < 0.15) { // 15% chance
-      const secondSequence = this.generateWASDSequence(sequenceLength);
-      const secondSpawnX = this.findValidSpawnPosition();
+      const secondSequence = this.generateKeyboardSequence(playerId, sequenceLength);
+      const secondSpawnX = this.findValidSpawnPosition(playerId);
       if (secondSpawnX !== null) {
-        const secondAsteroid = new Asteroid(this, secondSpawnX, -100, 'center', secondSequence);
+        const side = playerId === 0 ? 'left' : 'right';
+        const secondAsteroid = new Asteroid(this, secondSpawnX, -100, side, secondSequence, playerId);
         this.asteroids.push(secondAsteroid);
       }
     }
   }
   
-  private findValidSpawnPosition(): number | null {
+  private findValidSpawnPosition(playerId: PlayerId): number | null {
     const minDistance = 60; // Increased minimum distance between asteroids
     const maxAttempts = 10;
+    const playerCount = settingsStore.getPlayerCount();
     
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      // Generate random X position
-      const candidateX = 100 + Math.random() * (GAME_SETTINGS.CANVAS_WIDTH - 200);
+      let candidateX: number;
       
-      // Check if this position is far enough from existing asteroids
+      if (playerCount === 1) {
+        // Singleplayer: spawn anywhere on screen
+        candidateX = 100 + Math.random() * (GAME_SETTINGS.CANVAS_WIDTH - 200);
+      } else {
+        // Multiplayer: spawn in player's lane
+        if (playerId === 0) {
+          // Player 1: left lane
+          candidateX = 100 + Math.random() * (GAME_SETTINGS.CANVAS_WIDTH / 2 - 200);
+        } else {
+          // Player 2: right lane
+          candidateX = GAME_SETTINGS.CANVAS_WIDTH / 2 + 100 + Math.random() * (GAME_SETTINGS.CANVAS_WIDTH / 2 - 200);
+        }
+      }
+      
+      // Check if this position is far enough from existing asteroids in the same lane
       let isValidPosition = true;
       for (const existingAsteroid of this.asteroids) {
-        const distance = Math.abs(candidateX - existingAsteroid.x);
-        if (distance < minDistance) {
-          isValidPosition = false;
-          break;
+        if (existingAsteroid.getPlayerId() === playerId) {
+          const distance = Math.abs(candidateX - existingAsteroid.x);
+          if (distance < minDistance) {
+            isValidPosition = false;
+            break;
+          }
         }
       }
       
@@ -418,8 +597,8 @@ export default class PlayingGameScene extends Phaser.Scene {
     return null;
   }
   
-  private generateWASDSequence(length: number): string {
-    const keys = ['W', 'A', 'S', 'D'];
+  private generateKeyboardSequence(playerId: PlayerId, length: number): string {
+    const keys = playerId === 0 ? ['W', 'A', 'S', 'D'] : ['I', 'J', 'K', 'L'];
     const sequence: string[] = [];
     
     for (let i = 0; i < length; i++) {
@@ -428,6 +607,7 @@ export default class PlayingGameScene extends Phaser.Scene {
     
     return sequence.join(' ');
   }
+
 
   private generateSpellSequence(length: number): string {
     // Use only unlocked symbols in wand mode
@@ -461,12 +641,33 @@ export default class PlayingGameScene extends Phaser.Scene {
     if (this.isSpawningActive) {
       this.updateDifficulty(elapsedTicks);
       this.updateSymbolProgression(elapsedTicks);
-      this.ticksSinceLastSpawn++;
       
-      if (this.ticksSinceLastSpawn >= this.currentSpawnRateTicks) {
-        console.log('Spawning asteroid, ticksSinceLastSpawn:', this.ticksSinceLastSpawn, 'currentSpawnRateTicks:', this.currentSpawnRateTicks);
-        this.spawnAsteroid();
-        this.ticksSinceLastSpawn = 0;
+      const playerCount = settingsStore.getPlayerCount();
+      
+      if (playerCount === 1) {
+        // Singleplayer spawning
+        this.ticksSinceLastSpawn++;
+        if (this.ticksSinceLastSpawn >= this.currentSpawnRateTicks) {
+          console.log('Spawning asteroid, ticksSinceLastSpawn:', this.ticksSinceLastSpawn, 'currentSpawnRateTicks:', this.currentSpawnRateTicks);
+          this.spawnAsteroid(0);
+          this.ticksSinceLastSpawn = 0;
+        }
+      } else {
+        // Multiplayer spawning - separate timers for each player
+        this.ticksSinceLastSpawnP1++;
+        this.ticksSinceLastSpawnP2++;
+        
+        if (this.ticksSinceLastSpawnP1 >= this.currentSpawnRateTicksP1) {
+          console.log('Spawning asteroid for P1, ticksSinceLastSpawnP1:', this.ticksSinceLastSpawnP1, 'currentSpawnRateTicksP1:', this.currentSpawnRateTicksP1);
+          this.spawnAsteroid(0);
+          this.ticksSinceLastSpawnP1 = 0;
+        }
+        
+        if (this.ticksSinceLastSpawnP2 >= this.currentSpawnRateTicksP2) {
+          console.log('Spawning asteroid for P2, ticksSinceLastSpawnP2:', this.ticksSinceLastSpawnP2, 'currentSpawnRateTicksP2:', this.currentSpawnRateTicksP2);
+          this.spawnAsteroid(1);
+          this.ticksSinceLastSpawnP2 = 0;
+        }
       }
     }
     
@@ -537,15 +738,27 @@ export default class PlayingGameScene extends Phaser.Scene {
 
   private updateDifficulty(elapsedTicks: number): void {
     const difficultyProgress = elapsedTicks / this.gameDurationTicks;
+    const playerCount = settingsStore.getPlayerCount();
     
     // Spawn rate: 60 ticks to 45 ticks over the course of the round
     const spawnRateReduction = difficultyProgress * 15; // 60 - 45 = 15
-    this.currentSpawnRateTicks = Math.max(45, Math.round(60 - spawnRateReduction));
+    const newSpawnRate = Math.max(45, Math.round(60 - spawnRateReduction));
     
     // Fall speed: 1.0 to 1.4 over the course of the round
     const fallSpeedIncrease = difficultyProgress * 0.4; // 1.4 - 1.0 = 0.4
-    this.currentFallSpeed = 1.0 + fallSpeedIncrease;
+    const newFallSpeed = 1.0 + fallSpeedIncrease;
     
+    if (playerCount === 1) {
+      // Singleplayer: update single values
+      this.currentSpawnRateTicks = newSpawnRate;
+      this.currentFallSpeed = newFallSpeed;
+    } else {
+      // Multiplayer: update separate values for each player
+      this.currentSpawnRateTicksP1 = newSpawnRate;
+      this.currentSpawnRateTicksP2 = newSpawnRate;
+      this.currentFallSpeedP1 = newFallSpeed;
+      this.currentFallSpeedP2 = newFallSpeed;
+    }
   }
 
   private updateSymbolProgression(elapsedTicks: number): void {
@@ -582,14 +795,21 @@ export default class PlayingGameScene extends Phaser.Scene {
   }
   
   private updateAsteroids(): void {
-    const shipY = this.staticShip.y;
-    const shipX = this.staticShip.x;
+    const playerCount = settingsStore.getPlayerCount();
     
     for (let i = this.asteroids.length - 1; i >= 0; i--) {
       const asteroid = this.asteroids[i];
+      const playerId = asteroid.getPlayerId();
       
       // Update text positions to follow physics body
       asteroid.updateTextPositions();
+      
+      // Get the correct ship for this asteroid's player
+      const ship = this.getShipForPlayer(playerId);
+      if (!ship) continue;
+      
+      const shipY = ship.y;
+      const shipX = ship.x;
       
       // Calculate direction toward player using physics body position
       const asteroidX = asteroid.getPhysicsX();
@@ -598,10 +818,14 @@ export default class PlayingGameScene extends Phaser.Scene {
       const dy = shipY - asteroidY;
       const distance = Math.sqrt(dx * dx + dy * dy);
       
+      // Get the correct fall speed for this player
+      const fallSpeed = playerCount === 1 ? this.currentFallSpeed : 
+                       (playerId === 0 ? this.currentFallSpeedP1 : this.currentFallSpeedP2);
+      
       // Set velocity for smooth movement (pixels per tick * 30 TPS = pixels per second)
       if (distance > 0) {
-        const velocityX = (dx / distance) * this.currentFallSpeed * 30; // Convert to pixels/second
-        const velocityY = (dy / distance) * this.currentFallSpeed * 30; // Convert to pixels/second
+        const velocityX = (dx / distance) * fallSpeed * 30; // Convert to pixels/second
+        const velocityY = (dy / distance) * fallSpeed * 30; // Convert to pixels/second
         asteroid.setVelocity(velocityX, velocityY);
       }
       
@@ -620,7 +844,7 @@ export default class PlayingGameScene extends Phaser.Scene {
         // Asteroid hit the ship - delete with explosion
         asteroid.delete();
         this.asteroids.splice(i, 1);
-        gameStore.onAsteroidHit(0); // Reset consecutive asteroids and multiplier to 1
+        gameStore.onAsteroidHit(playerId); // Reset consecutive asteroids and multiplier to 1 for this player
         this.updateMultiplierDisplay();
         continue;
       }
@@ -679,12 +903,21 @@ export default class PlayingGameScene extends Phaser.Scene {
   
   private setupInput(): void {
     const keys = this.input.keyboard!;
+    const playerCount = settingsStore.getPlayerCount();
     
-    // WASD input for asteroid sequences
-    keys.on('keydown-W', () => this.handleKeyPress('W'));
-    keys.on('keydown-A', () => this.handleKeyPress('A'));
-    keys.on('keydown-S', () => this.handleKeyPress('S'));
-    keys.on('keydown-D', () => this.handleKeyPress('D'));
+    // Player 1 input (WASD)
+    keys.on('keydown-W', () => this.handleKeyPress('W', 0));
+    keys.on('keydown-A', () => this.handleKeyPress('A', 0));
+    keys.on('keydown-S', () => this.handleKeyPress('S', 0));
+    keys.on('keydown-D', () => this.handleKeyPress('D', 0));
+    
+    // Player 2 input (IJKL) - only in multiplayer
+    if (playerCount === 2) {
+      keys.on('keydown-I', () => this.handleKeyPress('I', 1));
+      keys.on('keydown-J', () => this.handleKeyPress('J', 1));
+      keys.on('keydown-K', () => this.handleKeyPress('K', 1));
+      keys.on('keydown-L', () => this.handleKeyPress('L', 1));
+    }
     
     // Enter key for results screen
     keys.on('keydown-ENTER', () => {
@@ -694,29 +927,40 @@ export default class PlayingGameScene extends Phaser.Scene {
     });
   }
   
-  private handleKeyPress(key: string): void {
+  private handleKeyPress(key: string, playerId: PlayerId): void {
     if (!this.isGameActive) return;
     
     // Add to minimap only in keyboard mode
-    if (settingsStore.getInputMode() === 'keyboard' && this.minimap) {
-      this.minimap.addKeyPress(key);
+    if (settingsStore.getInputMode() === 'keyboard') {
+      const playerCount = settingsStore.getPlayerCount();
+      if (playerCount === 1 && this.minimap) {
+        // Single minimap for singleplayer
+        this.minimap.addKeyPress(key);
+      } else if (playerCount === 2) {
+        // Dual minimaps for multiplayer
+        if (playerId === 0 && this.minimap1) {
+          this.minimap1.addKeyPress(key);
+        } else if (playerId === 1 && this.minimap2) {
+          this.minimap2.addKeyPress(key);
+        }
+      }
     }
     
-    // Find the closest asteroid that can accept this key
-    const nearestAsteroid = this.findNearestValidAsteroid(key);
+    // Find the closest asteroid that can accept this key for this player
+    const nearestAsteroid = this.findNearestValidAsteroid(key, playerId);
     if (nearestAsteroid) {
       // Check if this will be the final key before processing
       const success = nearestAsteroid.processKeyPress(key);
-      console.log(`Key ${key} pressed, success: ${success}, currentIndex: ${nearestAsteroid.currentIndex}, sequenceLength: ${nearestAsteroid.getSequenceLength()}`);
+      console.log(`Key ${key} pressed by player ${playerId}, success: ${success}, currentIndex: ${nearestAsteroid.currentIndex}, sequenceLength: ${nearestAsteroid.getSequenceLength()}`);
       if (success) {
         // Shoot missile for every successful key press
-        console.log(`Shooting missile for key ${key}`);
-        this.shootMissileAtAsteroidDelayed(nearestAsteroid);
+        console.log(`Shooting missile for key ${key} by player ${playerId}`);
+        this.shootMissileAtAsteroidDelayed(nearestAsteroid, playerId);
         
         // Check if sequence is now complete
         if (nearestAsteroid.isComplete()) {
           // Award points and update streak for completion
-          this.handleCorrectKeyPress(nearestAsteroid);
+          this.handleCorrectKeyPress(nearestAsteroid, playerId);
         }
       } else {
         // Brief negative feedback
@@ -728,10 +972,10 @@ export default class PlayingGameScene extends Phaser.Scene {
     }
   }
   
-  private findNearestValidAsteroid(key: string): Asteroid | null {
-    // Find asteroids that can accept this key
+  private findNearestValidAsteroid(key: string, playerId: PlayerId): Asteroid | null {
+    // Find asteroids that can accept this key and belong to this player
     const validAsteroids = this.asteroids.filter(asteroid => 
-      asteroid.canAcceptKey(key)
+      asteroid.canAcceptKey(key) && asteroid.getPlayerId() === playerId
     );
     
     if (validAsteroids.length === 0) return null;
@@ -754,13 +998,13 @@ export default class PlayingGameScene extends Phaser.Scene {
     });
   }
   
-  private handleCorrectKeyPress(asteroid: Asteroid): void {
+  private handleCorrectKeyPress(asteroid: Asteroid, playerId: PlayerId): void {
     const sequenceLength = asteroid.getSequenceLength();
     const baseScore = this.getBaseScore(sequenceLength);
     
     // Update score and multiplier based on consecutive asteroids
-    gameStore.updateScore(0, baseScore);
-    gameStore.onAsteroidDestroyed(0);
+    gameStore.updateScore(playerId, baseScore);
+    gameStore.onAsteroidDestroyed(playerId);
     
     // Update displays
     this.updateScoreDisplay();
@@ -770,46 +1014,58 @@ export default class PlayingGameScene extends Phaser.Scene {
     // The asteroid will be removed when the final missile hits it
   }
   
-  private shootMissileAtAsteroidDelayed(asteroid: Asteroid): void {
+  private shootMissileAtAsteroidDelayed(asteroid: Asteroid, playerId: PlayerId): void {
     // Calculate rotation angle to asteroid
-    const rotationAngle = this.calculateRotationToAsteroid(asteroid);
+    const rotationAngle = this.calculateRotationToAsteroid(asteroid, playerId);
     
     // Make ship face the asteroid with smooth tweening
-    this.makeShipFaceAsteroid(rotationAngle);
+    this.makeShipFaceAsteroid(rotationAngle, playerId);
     
     // Wait for ship rotation to complete, then shoot missile
     this.time.delayedCall(100, () => { // 100ms matches the tween duration
-      this.shootMissileAtAsteroid(asteroid, rotationAngle);
+      this.shootMissileAtAsteroid(asteroid, rotationAngle, playerId);
     });
   }
 
-  private shootMissileAtAsteroid(asteroid: Asteroid, rotationAngle?: number): void {
-    // Calculate rotation angle to asteroid if not provided
-    if (rotationAngle === undefined) {
-      rotationAngle = this.calculateRotationToAsteroid(asteroid);
-    }
+  private shootMissileAtAsteroid(asteroid: Asteroid, rotationAngle: number, playerId: PlayerId): void {
+    // Get the correct ship for this player
+    const ship = this.getShipForPlayer(playerId);
+    if (!ship) return;
     
     // Calculate missile spawn position (center/head of the ship)
-    const shipX = this.staticShip.x;
-    const shipY = this.staticShip.y;
+    const shipX = ship.x;
+    const shipY = ship.y;
     
     // Try spawning from the ship's center first to debug positioning
     const centerX = shipX;
     const centerY = shipY;
     
-    console.log(`Ship position: (${shipX}, ${shipY}), Missile spawn: (${centerX}, ${centerY}), Rotation: ${rotationAngle}`);
+    console.log(`Ship position for player ${playerId}: (${shipX}, ${shipY}), Missile spawn: (${centerX}, ${centerY}), Rotation: ${rotationAngle}`);
     
     // Create missile with the calculated rotation
     const missile: Missile = new Missile(this, centerX, centerY, asteroid, rotationAngle);
     this.missiles.push(missile);
   }
   
-  private calculateRotationToAsteroid(asteroid: Asteroid): number {
+  private getShipForPlayer(playerId: PlayerId): Phaser.GameObjects.Image | null {
+    const playerCount = settingsStore.getPlayerCount();
+    
+    if (playerCount === 1) {
+      return this.staticShip;
+    } else {
+      return playerId === 0 ? this.player1Ship : this.player2Ship;
+    }
+  }
+
+  private calculateRotationToAsteroid(asteroid: Asteroid, playerId: PlayerId): number {
     // Aim at the center of the asteroid sprite, not the physics body
     const asteroidX = asteroid.x;
     const asteroidY = asteroid.y;
-    const shipX = this.staticShip.x;
-    const shipY = this.staticShip.y;
+    const ship = this.getShipForPlayer(playerId);
+    if (!ship) return 0;
+    
+    const shipX = ship.x;
+    const shipY = ship.y;
     
     // Calculate angle to asteroid center
     const angle = Math.atan2(asteroidY - shipY, asteroidX - shipX);
@@ -820,10 +1076,14 @@ export default class PlayingGameScene extends Phaser.Scene {
     return adjustedAngle;
   }
   
-  private makeShipFaceAsteroid(targetRotation: number): void {
+  private makeShipFaceAsteroid(targetRotation: number, playerId: PlayerId): void {
+    // Get the correct ship for this player
+    const ship = this.getShipForPlayer(playerId);
+    if (!ship) return;
+    
     // Tween ship rotation to target angle with high speed
     this.tweens.add({
-      targets: this.staticShip,
+      targets: ship,
       rotation: targetRotation,
       duration: 100, // 100ms for faster rotation
       ease: 'Power2.easeOut'
@@ -831,17 +1091,51 @@ export default class PlayingGameScene extends Phaser.Scene {
   }
   
   private updateScoreDisplay(): void {
-    const scoreText = (this as any).scoreText;
-    if (scoreText) {
-      scoreText.setText(`SCORE: ${gameStore.players[0].score}`);
+    const playerCount = settingsStore.getPlayerCount();
+    
+    if (playerCount === 1) {
+      // Singleplayer display
+      const scoreText = (this as any).scoreText;
+      if (scoreText) {
+        scoreText.setText(`SCORE: ${gameStore.players[0].score}`);
+      }
+    } else {
+      // Multiplayer displays
+      const scoreText1 = (this as any).scoreText1;
+      const scoreText2 = (this as any).scoreText2;
+      
+      if (scoreText1) {
+        scoreText1.setText(`P1: ${gameStore.players[0].score}`);
+      }
+      if (scoreText2) {
+        scoreText2.setText(`P2: ${gameStore.players[1].score}`);
+      }
     }
   }
   
   private updateMultiplierDisplay(): void {
-    const multiplierText = (this as any).multiplierText;
-    if (multiplierText) {
-      const multiplier = gameStore.players[0].mult;
-      multiplierText.setText('★'.repeat(multiplier));
+    const playerCount = settingsStore.getPlayerCount();
+    
+    if (playerCount === 1) {
+      // Singleplayer display
+      const multiplierText = (this as any).multiplierText;
+      if (multiplierText) {
+        const multiplier = gameStore.players[0].mult;
+        multiplierText.setText('★'.repeat(multiplier));
+      }
+    } else {
+      // Multiplayer displays
+      const multiplierText1 = (this as any).multiplierText1;
+      const multiplierText2 = (this as any).multiplierText2;
+      
+      if (multiplierText1) {
+        const multiplier1 = gameStore.players[0].mult;
+        multiplierText1.setText('★'.repeat(multiplier1));
+      }
+      if (multiplierText2) {
+        const multiplier2 = gameStore.players[1].mult;
+        multiplierText2.setText('★'.repeat(multiplier2));
+      }
     }
   }
   
@@ -854,12 +1148,31 @@ export default class PlayingGameScene extends Phaser.Scene {
   private handleWandInput(): void {
     if (!this.modeInput) return;
     
-    const spell = this.modeInput.getCurrentSpell();
-    if (spell !== Spell.NONE) {
-      // Consume the spell immediately (removes from game logic but keeps in visualizer)
-      const consumedSpell = visualizerManager.consumeSpell();
-      
-      // Map spell to sequence string
+    const playerCount = settingsStore.getPlayerCount();
+    
+    if (playerCount === 1) {
+      // Singleplayer wand handling
+      const spell = this.modeInput.getCurrentSpell();
+      if (spell !== Spell.NONE) {
+        // Consume the spell immediately (removes from game logic but keeps in visualizer)
+        const consumedSpell = visualizerManager.consumeSpell();
+        
+        // Map spell to sequence string
+        const keyMapping: Record<Spell, string> = {
+          [Spell.NULL]: 'NULL',
+          [Spell.STAR]: 'STAR',
+          [Spell.TRIANGLE]: 'TRIANGLE',
+          [Spell.ARROW]: 'ARROW',
+          [Spell.NONE]: ''
+        };
+        
+        const key = keyMapping[consumedSpell];
+        if (key) {
+          this.handleKeyPress(key, 0); // Player 0 in singleplayer
+        }
+      }
+    } else {
+      // Multiplayer wand handling - use simpler approach like WandCalibrationScene
       const keyMapping: Record<Spell, string> = {
         [Spell.NULL]: 'NULL',
         [Spell.STAR]: 'STAR',
@@ -868,25 +1181,78 @@ export default class PlayingGameScene extends Phaser.Scene {
         [Spell.NONE]: ''
       };
       
-      const key = keyMapping[consumedSpell];
-      if (key) {
-        this.handleKeyPress(key); // Reuse existing logic
+      // Check player 1 wand - use simpler presence check
+      const player1WandPresent = visualizerManager.isWandPresent(); // Use general presence check
+      if (player1WandPresent) {
+        const wand1Spell = visualizerManager.getCurrentSpell();
+        if (wand1Spell !== Spell.NONE) {
+          const consumedSpell = visualizerManager.consumeSpell();
+          const key = keyMapping[consumedSpell];
+          if (key) {
+            console.log(`Player 1 wand spell detected: ${key}`);
+            this.handleKeyPress(key, 0);
+          }
+        }
+      }
+      
+      // Check player 2 wand - use simpler presence check  
+      const player2WandPresent = visualizerManager.isWand2Present(); // Use general presence check
+      if (player2WandPresent) {
+        const wand2Spell = visualizerManager.getWand2CurrentSpell();
+        if (wand2Spell !== Spell.NONE) {
+          const consumedSpell = visualizerManager.consumeWand2Spell();
+          const key = keyMapping[consumedSpell];
+          if (key) {
+            console.log(`Player 2 wand spell detected: ${key}`);
+            this.handleKeyPress(key, 1);
+          }
+        }
       }
     }
   }
 
   private updateVisualizerData(): void {
-    if (!this.visualizer || !this.modeInput) return;
+    const playerCount = settingsStore.getPlayerCount();
     
-    // Get data from the singleton visualizer manager
-    const points = visualizerManager.getPoints();
-    const currentPosition = visualizerManager.getCurrentPosition();
-    const visualizerSpell = visualizerManager.getVisualizerSpell(); // Use visualizer spell for display
-    
-    // Update the visualizer widget with the latest data
-    this.visualizer.setPoints(points);
-    this.visualizer.setCurrentPosition(currentPosition);
-    this.visualizer.showSpell(visualizerSpell);
+    if (playerCount === 1) {
+      // Singleplayer visualizer
+      if (!this.visualizer || !this.modeInput) return;
+      
+      // Get data from the singleton visualizer manager
+      const points = visualizerManager.getPoints();
+      const currentPosition = visualizerManager.getCurrentPosition();
+      const visualizerSpell = visualizerManager.getVisualizerSpell(); // Use visualizer spell for display
+      
+      // Update the visualizer widget with the latest data
+      this.visualizer.setPoints(points);
+      this.visualizer.setCurrentPosition(currentPosition);
+      this.visualizer.showSpell(visualizerSpell);
+    } else {
+      // Multiplayer visualizers - update both unconditionally like WandCalibrationScene
+      if (!this.modeInput) return;
+      
+      // Update visualizer 1 (orange - player 1) - always update like in calibration
+      if (this.visualizer1) {
+        const wand1Points = visualizerManager.getPlayer1Points();
+        const wand1Position = visualizerManager.getPlayer1CurrentPosition();
+        const wand1Spell = visualizerManager.getVisualizerSpell(); // Use the main visualizer spell for player 1
+        
+        this.visualizer1.setPoints(wand1Points);
+        this.visualizer1.setCurrentPosition(wand1Position);
+        this.visualizer1.showSpell(wand1Spell);
+      }
+      
+      // Update visualizer 2 (purple - player 2) - always update like in calibration
+      if (this.visualizer2) {
+        const wand2Points = visualizerManager.getPlayer2Points();
+        const wand2Position = visualizerManager.getPlayer2CurrentPosition();
+        const wand2Spell = visualizerManager.getWand2VisualizerSpell();
+        
+        this.visualizer2.setPoints(wand2Points);
+        this.visualizer2.setCurrentPosition(wand2Position);
+        this.visualizer2.showSpell(wand2Spell);
+      }
+    }
   }
   
   private getBaseScore(sequenceLength: number): number {
@@ -910,8 +1276,7 @@ export default class PlayingGameScene extends Phaser.Scene {
   }
   
   private showGameOver(reason: string): void {
-    const finalScore = gameStore.players[0].score;
-    const finalMultiplier = gameStore.players[0].mult;
+    const playerCount = settingsStore.getPlayerCount();
     
     // Create results overlay
     this.resultsOverlay = this.add.container(GAME_SETTINGS.CANVAS_WIDTH / 2, GAME_SETTINGS.CANVAS_HEIGHT / 2);
@@ -941,49 +1306,115 @@ export default class PlayingGameScene extends Phaser.Scene {
     );
     this.resultsOverlay.add(reasonText);
     
-    // Final score
-    const scoreText = BitmapTextHelper.createHUDText(
-      this,
-      0,
-      -50,
-      `FINAL SCORE: ${finalScore}`,
-      GAME_SETTINGS.COLORS.ORANGE
-    );
-    this.resultsOverlay.add(scoreText);
-    
-    // Multiplier stars
-    const starsText = BitmapTextHelper.createHUDText(
-      this,
-      0,
-      0,
-      `MULTIPLIER: ${'★'.repeat(finalMultiplier)}`,
-      GAME_SETTINGS.COLORS.YELLOW
-    );
-    this.resultsOverlay.add(starsText);
-    
-    // Check if score qualifies for leaderboard
-    const isHighScore = leaderboardStore.isHighScore(finalScore);
-    
-    // Instructions
-    const instructions = BitmapTextHelper.createHUDText(
-      this,
-      0,
-      100,
-      isHighScore ? 'PRESS ENTER TO ENTER NAME' : 'PRESS ENTER TO RETURN TO MENU',
-      GAME_SETTINGS.COLORS.WHITE
-    );
-    this.resultsOverlay.add(instructions);
-    
-    this.resultsOverlay.setDepth(1000);
-    
-    // Set up input handling for game over
-    this.input.keyboard?.once('keydown-ENTER', () => {
-      if (isHighScore) {
-        this.scene.start('NameEntry', { score: finalScore });
-      } else {
-        this.scene.start('Menu');
-      }
-    });
+    if (playerCount === 1) {
+      // Singleplayer results
+      const finalScore = gameStore.players[0].score;
+      const finalMultiplier = gameStore.players[0].mult;
+      
+      // Final score
+      const scoreText = BitmapTextHelper.createHUDText(
+        this,
+        0,
+        -50,
+        `FINAL SCORE: ${finalScore}`,
+        GAME_SETTINGS.COLORS.ORANGE
+      );
+      this.resultsOverlay.add(scoreText);
+      
+      // Multiplier stars
+      const starsText = BitmapTextHelper.createHUDText(
+        this,
+        0,
+        0,
+        `MULTIPLIER: ${'★'.repeat(finalMultiplier)}`,
+        GAME_SETTINGS.COLORS.YELLOW
+      );
+      this.resultsOverlay.add(starsText);
+      
+      // Check if score qualifies for leaderboard
+      const isHighScore = leaderboardStore.isHighScore(finalScore);
+      
+      // Instructions
+      const instructions = BitmapTextHelper.createHUDText(
+        this,
+        0,
+        100,
+        isHighScore ? 'PRESS ENTER TO ENTER NAME' : 'PRESS ENTER TO RETURN TO MENU',
+        GAME_SETTINGS.COLORS.WHITE
+      );
+      this.resultsOverlay.add(instructions);
+      
+      this.resultsOverlay.setDepth(1000);
+      
+      // Set up input handling for game over
+      this.input.keyboard?.once('keydown-ENTER', () => {
+        if (isHighScore) {
+          this.scene.start('NameEntry', { score: finalScore });
+        } else {
+          this.scene.start('Menu');
+        }
+      });
+    } else {
+      // Multiplayer results
+      const score1 = gameStore.players[0].score;
+      const score2 = gameStore.players[1].score;
+      const winner = score1 >= score2 ? 0 : 1;
+      const winnerScore = Math.max(score1, score2);
+      
+      // Player 1 score
+      const scoreText1 = BitmapTextHelper.createHUDText(
+        this,
+        0,
+        -50,
+        `PLAYER 1: ${score1}`,
+        GAME_SETTINGS.COLORS.ORANGE
+      );
+      this.resultsOverlay.add(scoreText1);
+      
+      // Player 2 score
+      const scoreText2 = BitmapTextHelper.createHUDText(
+        this,
+        0,
+        -10,
+        `PLAYER 2: ${score2}`,
+        GAME_SETTINGS.COLORS.PURPLE
+      );
+      this.resultsOverlay.add(scoreText2);
+      
+      // Winner announcement
+      const winnerText = BitmapTextHelper.createHUDText(
+        this,
+        0,
+        30,
+        `PLAYER ${winner + 1} WINS!`,
+        winner === 0 ? GAME_SETTINGS.COLORS.ORANGE : GAME_SETTINGS.COLORS.PURPLE
+      );
+      this.resultsOverlay.add(winnerText);
+      
+      // Check if winner's score qualifies for leaderboard
+      const isHighScore = leaderboardStore.isHighScore(winnerScore);
+      
+      // Instructions
+      const instructions = BitmapTextHelper.createHUDText(
+        this,
+        0,
+        100,
+        isHighScore ? 'PRESS ENTER TO ENTER WINNER NAME' : 'PRESS ENTER TO RETURN TO MENU',
+        GAME_SETTINGS.COLORS.WHITE
+      );
+      this.resultsOverlay.add(instructions);
+      
+      this.resultsOverlay.setDepth(1000);
+      
+      // Set up input handling for game over
+      this.input.keyboard?.once('keydown-ENTER', () => {
+        if (isHighScore) {
+          this.scene.start('NameEntry', { score: winnerScore });
+        } else {
+          this.scene.start('Menu');
+        }
+      });
+    }
   }
 
 

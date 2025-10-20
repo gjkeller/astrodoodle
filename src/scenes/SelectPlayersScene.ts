@@ -4,6 +4,7 @@ import { gameStore, eventBus, settingsStore, createModeInput, type ModeInput, vi
 import { GAME_SETTINGS } from '../core/settings';
 import type { PlayerId } from '../types/global';
 import { resetTracker } from '../gesture/tracker';
+import { Visualizer } from '../ui/visualizer';
 
 export default class SelectPlayersScene extends Phaser.Scene {
   private title: Phaser.GameObjects.Text | Phaser.GameObjects.BitmapText;
@@ -12,6 +13,8 @@ export default class SelectPlayersScene extends Phaser.Scene {
   private backButton: Button;
   private modeInput: ModeInput | null = null;
   private hasSeenWandInWandMode: boolean = false;
+  private visualizer1: Visualizer | null = null;
+  private visualizer2: Visualizer | null = null;
   
   constructor() {
     super('SelectPlayers');
@@ -42,6 +45,7 @@ export default class SelectPlayersScene extends Phaser.Scene {
     this.createBackground();
     this.createTitle();
     this.createPlayerPanels(inputMode);
+    this.createVisualizers(inputMode);
     this.createStartButton();
     this.createBackButton();
     this.setupInput();
@@ -74,17 +78,89 @@ export default class SelectPlayersScene extends Phaser.Scene {
   }
   
   private createPlayerPanels(inputMode: 'keyboard' | 'wand'): void {
-    const centerX = GAME_SETTINGS.CANVAS_WIDTH / 2;
+    const playerCount = settingsStore.getPlayerCount();
     const centerY = GAME_SETTINGS.CANVAS_HEIGHT / 2;
     
-    // Singleplayer mode: only show one player panel in the center
-    this.playerPanels = [
-      new PlayerPanel(this, centerX, centerY, 0, inputMode),
-      new PlayerPanel(this, centerX, centerY, 1, inputMode) // Hidden
-    ];
+    if (playerCount === 1) {
+      // Singleplayer mode: only show one player panel in the center
+      const centerX = GAME_SETTINGS.CANVAS_WIDTH / 2;
+      this.playerPanels = [
+        new PlayerPanel(this, centerX, centerY, 0, inputMode),
+        new PlayerPanel(this, centerX, centerY, 1, inputMode) // Hidden
+      ];
+      
+      // Hide the second player panel for singleplayer
+      this.playerPanels[1].setVisible(false);
+    } else {
+      // Multiplayer mode: show both player panels side-by-side
+      const leftX = GAME_SETTINGS.CANVAS_WIDTH * 0.25;
+      const rightX = GAME_SETTINGS.CANVAS_WIDTH * 0.75;
+      
+      this.playerPanels = [
+        new PlayerPanel(this, leftX, centerY, 0, inputMode),
+        new PlayerPanel(this, rightX, centerY, 1, inputMode)
+      ];
+      
+      // Both panels visible in multiplayer
+      this.playerPanels[0].setVisible(true);
+      this.playerPanels[1].setVisible(true);
+    }
+  }
+
+  private createVisualizers(inputMode: 'keyboard' | 'wand'): void {
+    // Only create visualizers in wand mode
+    if (inputMode !== 'wand') return;
     
-    // Hide the second player panel for singleplayer
-    this.playerPanels[1].setVisible(false);
+    const playerCount = settingsStore.getPlayerCount();
+    
+    if (playerCount === 1) {
+      // Singleplayer: one visualizer below the player panel
+      this.visualizer1 = new Visualizer(
+        this,
+        GAME_SETTINGS.CANVAS_WIDTH / 2, // Center
+        GAME_SETTINGS.CANVAS_HEIGHT / 2 + 150, // Below player panel
+        0.6, // Scale
+        GAME_SETTINGS.COLORS.ORANGE, // Orange border for player 1
+        3, // Border width
+        0x222222 // Background
+      );
+    } else {
+      // Multiplayer: dual visualizers below each player panel
+      this.visualizer1 = new Visualizer(
+        this,
+        GAME_SETTINGS.CANVAS_WIDTH * 0.25, // Left side
+        GAME_SETTINGS.CANVAS_HEIGHT / 2 + 150, // Below player panel
+        0.5, // Scale - slightly smaller for dual
+        GAME_SETTINGS.COLORS.ORANGE, // Orange border for player 1
+        3, // Border width
+        0x222222 // Background
+      );
+      
+      this.visualizer2 = new Visualizer(
+        this,
+        GAME_SETTINGS.CANVAS_WIDTH * 0.75, // Right side
+        GAME_SETTINGS.CANVAS_HEIGHT / 2 + 150, // Below player panel
+        0.5, // Scale - slightly smaller for dual
+        GAME_SETTINGS.COLORS.PURPLE, // Purple border for player 2
+        3, // Border width
+        0x222222 // Background
+      );
+      
+      // Add labels for each visualizer
+      this.add.text(
+        GAME_SETTINGS.CANVAS_WIDTH * 0.25,
+        GAME_SETTINGS.CANVAS_HEIGHT / 2 + 100,
+        'PLAYER 1 WAND',
+        { fontFamily: '"Press Start 2P"', fontSize: '16px', color: '#FF6600' }
+      ).setOrigin(0.5).setDepth(200);
+      
+      this.add.text(
+        GAME_SETTINGS.CANVAS_WIDTH * 0.75,
+        GAME_SETTINGS.CANVAS_HEIGHT / 2 + 100,
+        'PLAYER 2 WAND',
+        { fontFamily: '"Press Start 2P"', fontSize: '16px', color: '#8800FF' }
+      ).setOrigin(0.5).setDepth(200);
+    }
   }
   
   private createStartButton(): void {
@@ -126,37 +202,111 @@ export default class SelectPlayersScene extends Phaser.Scene {
   update(_time: number, _delta: number): void {
     // Handle wand mode detection
     if (settingsStore.getInputMode() === 'wand' && this.modeInput) {
+      const playerCount = settingsStore.getPlayerCount();
+      
       // Update visualizer manager
       visualizerManager.update();
       
-      const wandPresent = this.modeInput.isWandPresent?.() || false;
+      // Update visualizer displays
+      this.updateVisualizerData();
       
-      // Once wand is seen, mark as ready permanently
-      if (wandPresent && !this.hasSeenWandInWandMode) {
-        this.hasSeenWandInWandMode = true;
-        eventBus.emit('player:ready', { playerId: 0, ready: 'ready' });
+      if (playerCount === 1) {
+        // Singleplayer: check for player 1 wand presence (requires calibration)
+        const player1WandPresent = visualizerManager.isPlayer1WandPresent();
+        
+        // Once wand is seen, mark as ready permanently
+        if (player1WandPresent && !this.hasSeenWandInWandMode) {
+          this.hasSeenWandInWandMode = true;
+          eventBus.emit('player:ready', { playerId: 0, ready: 'ready' });
+        }
+      } else {
+        // Multiplayer: check for both wands based on calibration
+        // Check for player 1 wand (orange)
+        const player1WandPresent = visualizerManager.isPlayer1WandPresent();
+        if (player1WandPresent && gameStore.players[0].ready === 'not-ready') {
+          eventBus.emit('player:ready', { playerId: 0, ready: 'ready' });
+        }
+        
+        // Check for player 2 wand (purple)
+        const player2WandPresent = visualizerManager.isPlayer2WandPresent();
+        if (player2WandPresent && gameStore.players[1].ready === 'not-ready') {
+          eventBus.emit('player:ready', { playerId: 1, ready: 'ready' });
+        }
+      }
+    }
+  }
+
+  private updateVisualizerData(): void {
+    console.log('updateVisualizerData');
+    const playerCount = settingsStore.getPlayerCount();
+
+    
+    if (playerCount === 1) {
+      console.log('Singleplayer visualizers');
+      // Singleplayer visualizer
+      if (this.visualizer1) {
+        const points = visualizerManager.getPlayer1Points();
+        const currentPosition = visualizerManager.getPlayer1CurrentPosition();
+        const visualizerSpell = visualizerManager.getVisualizerSpell();
+        
+        this.visualizer1.setPoints(points);
+        this.visualizer1.setCurrentPosition(currentPosition);
+        this.visualizer1.showSpell(visualizerSpell);
+      }
+    } else {
+      console.log('Multiplayer visualizers');
+      // Multiplayer visualizers - update both unconditionally like WandCalibrationScene
+      if (this.visualizer1) {
+        const wand1Points = visualizerManager.getPlayer1Points();
+        const wand1Position = visualizerManager.getPlayer1CurrentPosition();
+        const wand1Spell = visualizerManager.getVisualizerSpell();
+        
+        this.visualizer1.setPoints(wand1Points);
+        this.visualizer1.setCurrentPosition(wand1Position);
+        console.log('wand1Spell', wand1Position);
+        this.visualizer1.showSpell(wand1Spell);
+      }
+      
+      if (this.visualizer2) {
+        const wand2Points = visualizerManager.getPlayer2Points();
+        const wand2Position = visualizerManager.getPlayer2CurrentPosition();
+        const wand2Spell = visualizerManager.getWand2VisualizerSpell();
+        
+        this.visualizer2.setPoints(wand2Points);
+        this.visualizer2.setCurrentPosition(wand2Position);
+        console.log('wand2Spell', wand2Position);
+        this.visualizer2.showSpell(wand2Spell);
       }
     }
   }
 
   private setupInput(): void {
     const inputMode = settingsStore.getInputMode();
+    const playerCount = settingsStore.getPlayerCount();
+    const keys = this.input.keyboard!;
     
     if (inputMode === 'keyboard') {
       // W key toggles ready state for player 0 in keyboard mode
-      const keys = this.input.keyboard!;
       keys.on('keydown-W', () => {
         const currentState = gameStore.players[0].ready;
         const newState = currentState === 'ready' ? 'not-ready' : 'ready';
         eventBus.emit('player:ready', { playerId: 0, ready: newState });
       });
+      
+      // I key toggles ready state for player 1 in keyboard mode (only in 2P mode)
+      if (playerCount === 2) {
+        keys.on('keydown-I', () => {
+          const currentState = gameStore.players[1].ready;
+          const newState = currentState === 'ready' ? 'not-ready' : 'ready';
+          eventBus.emit('player:ready', { playerId: 1, ready: newState });
+        });
+      }
     }
-    // In wand mode, no W key needed - wand detection is automatic
+    // In wand mode, no keys needed - wand detection is automatic
     
-    // Enter key starts the game (only if player is ready) - works in both modes
-    const keys = this.input.keyboard!;
+    // Enter key starts the game (only if required players are ready) - works in both modes
     keys.on('keydown-ENTER', () => {
-      if (gameStore.players[0].ready === 'ready') {
+      if (this.canStartGame()) {
         this.startGame();
       }
     });
@@ -169,15 +319,25 @@ export default class SelectPlayersScene extends Phaser.Scene {
     });
   }
   
+  private canStartGame(): boolean {
+    const playerCount = settingsStore.getPlayerCount();
+    
+    if (playerCount === 1) {
+      // Singleplayer mode: only need player 0 to be ready
+      return gameStore.players[0].ready === 'ready';
+    } else {
+      // Multiplayer mode: need both players ready
+      return gameStore.players[0].ready === 'ready' && gameStore.players[1].ready === 'ready';
+    }
+  }
+
   private updateStartButton(): void {
-    // Singleplayer mode: only need player 0 to be ready
-    const playerReady = gameStore.players[0].ready === 'ready';
-    this.startButton.setEnabled(playerReady);
+    this.startButton.setEnabled(this.canStartGame());
   }
   
   private startGame(): void {
     // Singleplayer mode: only need player 0 to be ready
-    if (gameStore.players[0].ready === 'ready') {
+    if (this.canStartGame()) {
       this.scene.start('Tutorial');
     }
   }
@@ -209,8 +369,14 @@ class PlayerPanel extends Phaser.GameObjects.Container {
     this.glyph.setScale(0.8);
     this.add(this.glyph);
     
-    // Create status text based on input mode
-    const statusText = inputMode === 'keyboard' ? 'PRESS W FOR READY' : 'DISPLAY WAND';
+    // Create status text based on input mode and player
+    let statusText: string;
+    if (inputMode === 'keyboard') {
+      statusText = playerId === 0 ? 'PRESS W FOR READY' : 'PRESS I FOR READY';
+    } else {
+      statusText = 'DISPLAY WAND';
+    }
+    
     this.statusText = BitmapTextHelper.createHUDText(
       scene,
       0,
@@ -238,7 +404,13 @@ class PlayerPanel extends Phaser.GameObjects.Container {
         0x96FFA2
       );
     } else {
-      const statusText = this.inputMode === 'keyboard' ? 'PRESS W FOR READY' : 'DISPLAY WAND';
+      let statusText: string;
+      if (this.inputMode === 'keyboard') {
+        statusText = this.playerId === 0 ? 'PRESS W FOR READY' : 'PRESS I FOR READY';
+      } else {
+        statusText = 'DISPLAY WAND';
+      }
+      
       this.statusText = BitmapTextHelper.createHUDText(
         this.scene,
         0,

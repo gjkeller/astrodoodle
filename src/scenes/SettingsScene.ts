@@ -221,11 +221,11 @@ export default class SettingsScene extends Phaser.Scene {
   private createPlayerCountButton(x: number, y: number, width: number, height: number): Phaser.GameObjects.Container {
     const button = this.add.container(x, y);
     
-    // Create disabled button background
+    // Create button background
     const bg = this.add.graphics();
-    bg.fillStyle(0x222222, 0.8);
+    bg.fillStyle(0x333333, 0.8);
     bg.fillRoundedRect(-width / 2, -height / 2, width, height, 10);
-    bg.lineStyle(2, 0x444444, 1);
+    bg.lineStyle(2, 0x666666, 1);
     bg.strokeRoundedRect(-width / 2, -height / 2, width, height, 10);
     
     // Create button text
@@ -233,15 +233,36 @@ export default class SettingsScene extends Phaser.Scene {
       this,
       0,
       0,
-      '1 Player'
+      this.getPlayerCountLabel()
     );
-    text.setTint(0x888888); // Gray out the text
     
     button.add([bg, text]);
     button.setSize(width, height);
     button.setDepth(5);
     
-    // No hover effects for disabled button
+    // Add hover effects
+    button.setInteractive();
+    button.on('pointerover', () => {
+      bg.clear();
+      bg.fillStyle(0x444444, 0.9);
+      bg.fillRoundedRect(-width / 2, -height / 2, width, height, 10);
+      bg.lineStyle(2, 0x888888, 1);
+      bg.strokeRoundedRect(-width / 2, -height / 2, width, height, 10);
+    });
+    
+    button.on('pointerout', () => {
+      bg.clear();
+      bg.fillStyle(0x333333, 0.8);
+      bg.fillRoundedRect(-width / 2, -height / 2, width, height, 10);
+      bg.lineStyle(2, 0x666666, 1);
+      bg.strokeRoundedRect(-width / 2, -height / 2, width, height, 10);
+    });
+    
+    button.on('pointerdown', () => {
+      this.togglePlayerCount();
+      // Update button text
+      text.setText(this.getPlayerCountLabel());
+    });
     
     return button;
   }
@@ -305,6 +326,10 @@ export default class SettingsScene extends Phaser.Scene {
     return settingsStore.getInputMode() === 'keyboard' ? 'Keyboard Mode' : 'Wand Mode';
   }
 
+  private getPlayerCountLabel(): string {
+    return settingsStore.getPlayerCount() === 1 ? '1 Player' : '2 Players';
+  }
+
   private toggleInputMode(): void {
     const currentMode = settingsStore.getInputMode();
     const newMode = currentMode === 'keyboard' ? 'wand' : 'keyboard';
@@ -331,22 +356,26 @@ export default class SettingsScene extends Phaser.Scene {
       buttonHeight
     );
     
-    // Auto-launch calibration when switching to wand mode
+    // Initialize visualizer manager when switching to wand mode (but don't auto-redirect)
     if (newMode === 'wand') {
       console.log('SettingsScene: Switching to wand mode');
       // Initialize visualizer manager if not already done
       if (!visualizerManager.isInitialized()) {
         visualizerManager.initialize(this);
       }
-      // Wait a frame for initialization
-      this.time.delayedCall(100, () => {
-        this.scene.start('WandCalibration');
-      });
     } else {
       // When switching to keyboard mode, cleanup visualizer manager
       console.log('SettingsScene: Switching to keyboard mode');
       visualizerManager.cleanup();
     }
+  }
+
+  private togglePlayerCount(): void {
+    const currentCount = settingsStore.getPlayerCount();
+    const newCount = currentCount === 1 ? 2 : 1;
+    settingsStore.setPlayerCount(newCount);
+    
+    console.log(`SettingsScene: Switching to ${newCount} player mode`);
   }
 
   private createBackButton(): void {
